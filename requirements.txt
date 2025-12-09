@@ -125,15 +125,21 @@ webcolors==25.10.0
 webencodings==0.5.1
 websocket-client==1.9.0
 
-
 # Trick to install the version of Tensorflow depending on your processor: darwin == Mac, ARM == M1
 tensorflow-macos; sys_platform == 'darwin' and 'ARM' in platform_version # Mac M-chips
 tensorflow; sys_platform == 'darwin' and 'ARM' not in platform_version # Mac Intel chips
 tensorflow; sys_platform != 'darwin' # Windows & Ubuntu Intel chips
 
-# api
+# API Framework
 fastapi
 uvicorn
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
 
-# img
-opencv-python
+# Image Processing
+pillow==10.1.0
+opencv-python==4.8.1.78
+
+# File Upload Support
+python-multipart==0.0.6
