@@ -3,6 +3,16 @@ Lunar Crater Age classification - Data Preprocessing Pipeline
 
 This module contains all functions needed to load, preprocess, and batch
 lunar crater images for training a CNN model
+
+Use load_data and you will get:
+# 1. ✅ All images loaded
+# 2. ✅ Validated to 227x227
+# 3. ✅ Converted to RGB if needed
+# 4. ✅ Normalized (z-score)
+# 5. ✅ Batched efficiently
+# 6. ✅ Class imbalance handled (if requested)
+# 7. ✅ Shuffled for training
+# 8. ✅ Ready for CNN input
 """
 import random
 import numpy as np
@@ -19,14 +29,15 @@ IMAGE_SIZE = (227, 227)
 CLASS_NAMES = ["ejecta", "oldcrater", "none"]
 
 #Z-score normalization parameters (pre-calculated from lunar dataset)
-NORM_MEAN = [0.3306, 0.3306, 0.3306]
-NORM_STD = [0.1618, 0.1618, 0.1618]
+NORM_MEAN = 0.3306  #Averge moon brightness (dark grey)
+NORM_STD = 0.1618   #Standard deviation of moon brightness
+
 
 #-------------------------------------------------------------------------------
 # FUNCTIONS - single image processing
 #-------------------------------------------------------------------------------
 
-def load_and_validate_image(path: Path) -> np.array:
+def load_and_validate_image(path: Path) -> np.ndarray:
     """
     Load image and ensure its 227 x 227 RGB
     Returns: Numpy array shape (227,227,3)
@@ -50,7 +61,7 @@ def load_and_validate_image(path: Path) -> np.array:
 
 
 
-def normalize_image(image_array: np.ndarray) -> np.array:
+def normalize_image(image_array: np.ndarray) -> np.ndarray:
     """
     Applies z-score normalization to lunar crater images
     Converts [0, 255] range -> normalized range ~[-2, +2]
@@ -72,12 +83,9 @@ def normalize_image(image_array: np.ndarray) -> np.array:
     img_float = image_array.astype(np.float32) / 255.0
 
      #Z-score normalization using our calculated statistics
-    NORM_MEAN = 0.3306   # #Averge moon brightness (dark grey)
-    NORM_STD = 0.1618    # Standard deviation of moon brightness
-
     return (img_float - NORM_MEAN) / NORM_STD
 
-def preprocess_single_image(image_path: Path) -> np.array:
+def preprocess_single_image(image_path: Path) -> np.ndarray:
     """
     Complete preprocessing for one lunar image
     Combines loading, validation and normalization in one call
@@ -110,7 +118,7 @@ def preprocess_single_image(image_path: Path) -> np.array:
 def preprocess_batch(
     image_paths: List[Path],
     output_dtype: type = np.float32
-)->np.array:
+)->np.ndarray:
     """
     Process multiple images efectively in batch
 
@@ -122,10 +130,6 @@ def preprocess_batch(
         Batch array shape: (batch_size, 227, 227 3)
         batch_size = len(image_paths)
     """
-    import numpy as np
-    from pathlib import Path
-    from typing import List
-
     batch_size = len(image_paths)
     batch_array = np.zeros((batch_size, 227, 227, 3), dtype=output_dtype)
 
@@ -158,10 +162,9 @@ def create_balanced_subset(
         class_index: 0=ejecta, 1=oldcrater, 2=none
     """
     random.seed(seed)
-    class_names = ["ejecta", "oldcrater", "none"]
     balance_samples = []
 
-    for class_idx, class_name in enumerate(class_names):
+    for class_idx, class_name in enumerate(CLASS_NAMES):
         class_path = data_dir / class_name
         all_files = list(class_path.glob("*.jpg"))
 
@@ -178,7 +181,7 @@ def create_balanced_subset(
 
     print(f"✅Balanced subset: {samples_per_class} samples per class")
     print(f"Total: {len(balance_samples)} images")
-    print(f"Classes: {class_names}")
+    print(f"Classes: {CLASS_NAMES}")
 
     return balance_samples
 
@@ -203,11 +206,11 @@ def create_weighted_sampler(
 
     #Count samples per class
     class_counts = Counter(labels)
-    class_names = ["ejecta", "oldcrater", "none"]
+
 
     print(f"Original class distribution:")
     for class_idx in sorted(class_counts.keys()):
-        class_name = class_names[class_idx]
+        class_name = CLASS_NAMES[class_idx]
         count = class_counts[class_idx]
         print(f"{class_name}: {count} samples")
 
@@ -219,7 +222,7 @@ def create_weighted_sampler(
     resampled_samples = []
 
     for class_idx in sorted(class_counts.keys()):
-        class_name = class_names[class_idx]
+        class_name = CLASS_NAMES[class_idx]
         class_samples = [s for s in samples if s[1] == class_idx]
 
         #weigth how many times we need to replicate
@@ -248,9 +251,115 @@ def create_weighted_sampler(
     final_counts = Counter([label for _, label in resampled_samples])
     print(f"After weighted resampling")
     for class_idx in sorted(final_counts.keys()):
-        class_name = class_names[class_idx]
+        class_name = CLASS_NAMES[class_idx]
         count = final_counts[class_idx]
         weight = weights.get(class_idx, 1.0)
         print(f"{class_name}: {count} samples (weight: {weight:.2f})")
 
     return resampled_samples
+
+#-------------------------------------------------------------------------------
+# FUNCTIONS - Load Data
+#-------------------------------------------------------------------------------
+def create_array_dataloader(
+    samples: List[Tuple[Path, int]],
+    batch_size: int = 32,
+    shuffle: bool = True,
+    seed: int = 42
+):
+    """
+    Create a DataLoader that yields batches (more memory efficient)
+
+    Args:
+        samples: From create_balanced_subset() - list of (path, label)
+        batch_size: Images per batch
+        shuffle: Whether to shuffle data
+        seed: Random seed
+
+    Yields:
+        (batch_images, batch_labels) per iteration
+        - batch_images: shape (batch_size, 227, 227, 3), float32
+        - batch_labels: shape (batch_size,), int32
+    """
+    random.seed(seed)
+
+    if shuffle:
+        random.shuffle(samples)
+
+    # Separate paths and labels
+    image_paths = [item[0] for item in samples]
+    labels = np.array([item[1] for item in samples], dtype=np.int32)
+
+    n_samples = len(samples)
+
+    # Yield batches
+    for start_idx in range(0, n_samples, batch_size):
+        end_idx = min(start_idx + batch_size, n_samples)
+
+        batch_paths = image_paths[start_idx:end_idx]
+        batch_labels = labels[start_idx:end_idx]
+
+        # Process this batch
+        batch_images = preprocess_batch(batch_paths)
+
+        yield batch_images, batch_labels
+
+def load_data(
+    data_dir: Path,
+    balanced: bool = True,
+    batch_size: int = 32,
+    use_weighted_sampling: bool = False,
+    samples_per_class: int = 358,
+    seed: int = 42
+) ->Generator[Tuple[np.array, np.ndarray], None, None]:
+    """
+    MAIN FUNCTION- What we should use for loading the data needed for the CNN.
+
+    Loads and batches lunar crater images for training/validation.
+
+    Args:
+        data_dir: Path to data folder
+        balanced: True for balanced subset (prototype), false for all data (Final training)
+        use_weighted_sampling: Apply weighted sampling for imbalance data (only works when balanced = false)
+        batch_size: Number of images per batch
+        samples_per_class: For balanced mode only
+        seed: Random seed for reproducibility
+
+    Returns:
+        Generator yielding (images, labels) batches
+
+    """
+
+    if balanced:
+        print(f"Creating BALANCED dataset ({samples_per_class} per class)")
+        samples = create_balanced_subset(data_dir, samples_per_class, seed)
+        print (f"Total images: {len(samples)}")
+
+        #Create loader for balanced data
+        loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed)
+
+    else:
+        print(f"Creating FULL dataset (all available data)")
+        samples = []
+
+        for class_idx, class_name in enumerate(CLASS_NAMES):
+            class_path = data_dir / class_name
+            all_files = list(class_path.glob("*.jpg"))
+            samples.extend([(img_path, class_idx) for img_path in all_files])
+
+            print(f"{class_name}: {len(all_files)} images")
+
+        print(f"Total images {len(samples)}")
+
+        if use_weighted_sampling:
+            print(f"Applying weighted sampling strategy")
+            #Resample the entire dataset with weights
+            resampled_samples = create_weighted_sampler(samples, seed=seed)
+            loader = create_array_dataloader(resampled_samples, batch_size=batch_size, shuffle=True, seed=seed)
+
+        else:
+            #Standard imbalanced loader
+            print(f"Using imbalanced data without weighting")
+            loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed)
+
+    return loader
