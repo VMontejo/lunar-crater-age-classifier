@@ -124,3 +124,16 @@ wcwidth==0.2.14
 webcolors==25.10.0
 webencodings==0.5.1
 websocket-client==1.9.0
+
+
+# Trick to install the version of Tensorflow depending on your processor: darwin == Mac, ARM == M1
+tensorflow-macos; sys_platform == 'darwin' and 'ARM' in platform_version # Mac M-chips
+tensorflow; sys_platform == 'darwin' and 'ARM' not in platform_version # Mac Intel chips
+tensorflow; sys_platform != 'darwin' # Windows & Ubuntu Intel chips
+
+# api
+fastapi
+uvicorn
+
+# img
+opencv-python
