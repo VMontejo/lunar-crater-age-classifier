@@ -179,7 +179,7 @@ def create_balanced_subset(
 
         balance_samples.extend([(img_path, class_idx) for img_path in selected])
 
-    print(f"✅Balanced subset: {samples_per_class} samples per class")
+    print(f"Balanced subset: {samples_per_class} samples per class")
     print(f"Total: {len(balance_samples)} images")
     print(f"Classes: {CLASS_NAMES}")
 
