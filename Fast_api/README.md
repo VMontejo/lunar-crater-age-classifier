@@ -7,10 +7,12 @@ Execute the following command from the project root (`lunar-crater-age-classifie
 ```bash
 # The '--reload' flag enables auto-restart during development
 uvicorn Fast_api.app:app --reload --port 8000
+```
 
 ### 2. Test the Health Endpoint
 Once the server starts (it runs on http://127.0.0.1:8000), verify it is operational.
 
 ```bash
-`curl http://127.0.0.1:8000/health`
-`# Expected Output: {"status":"ok","message":"Service operational.","environment":"local"}`
+curl http://127.0.0.1:8000/health
+# Expected Output: {"status":"ok","message":"Service operational.","environment":"local"}
+```
