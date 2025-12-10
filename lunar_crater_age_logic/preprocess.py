@@ -13,6 +13,7 @@ Use load_data and you will get:
 # 6. Class imbalance handled (if requested)
 # 7. Shuffled for training
 # 8. Ready for CNN input
+
 """
 import random
 import numpy as np
@@ -31,7 +32,6 @@ CLASS_NAMES = ["ejecta", "oldcrater", "none"]
 #Z-score normalization parameters (pre-calculated from lunar dataset)
 NORM_MEAN = 0.3306  #Averge moon brightness (dark grey)
 NORM_STD = 0.1618   #Standard deviation of moon brightness
-
 
 #-------------------------------------------------------------------------------
 # FUNCTIONS - single image processing
@@ -60,32 +60,27 @@ def load_and_validate_image(path: Path) -> np.ndarray:
         return np.array(img) #Shape (227, 227, 3), dtype: uint8
 
 
-
-def normalize_image(image_array: np.ndarray) -> np.ndarray:
+def normalize_image(image_array: np.ndarray, use_zscore: bool = False) -> np.ndarray:
     """
-    Applies z-score normalization to lunar crater images
-    Converts [0, 255] range -> normalized range ~[-2, +2]
-    Centers data around 0 (mean = 0, std = 1)
-    Helps model to focus on crater features, not brightness
-
-    Formula:
-        1. Scale: img_float = img_array / 255.0
-        2. Normalize: img_normalized = (img_float - 0.3306) / 0.1618
+    Applies normalization to lunar crater images
 
     Args:
         img_array: NumPy array from load_and_validate_image()
+        use_zscore: If True, apply z.score; if false, just /255.0
 
     Returns:
         Normalized array, shape (227, 227, 3), dtype:float32
     """
-
-    #Convert to float32 and scale to [0, 1]
     img_float = image_array.astype(np.float32) / 255.0
 
-     #Z-score normalization using our calculated statistics
-    return (img_float - NORM_MEAN) / NORM_STD
+    if use_zscore:
+        #Z-score normalization using our calculated statistics
+        return (img_float - NORM_MEAN) / NORM_STD
 
-def preprocess_single_image(image_path: Path) -> np.ndarray:
+    return img_float
+
+
+def preprocess_single_image(image_path: Path, use_zscore: bool = False) -> np.ndarray:
     """
     Complete preprocessing for one lunar image
     Combines loading, validation and normalization in one call
@@ -96,6 +91,7 @@ def preprocess_single_image(image_path: Path) -> np.ndarray:
 
     Args:
         image_path: Path to .jpg file
+        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Preprocessed image array, ready for models
@@ -107,7 +103,7 @@ def preprocess_single_image(image_path: Path) -> np.ndarray:
     raw_image = load_and_validate_image(image_path)
 
     #Step 2: Normalize
-    process_image = normalize_image(raw_image)
+    process_image = normalize_image(raw_image, use_zscore)
 
     return process_image
 
@@ -117,6 +113,7 @@ def preprocess_single_image(image_path: Path) -> np.ndarray:
 
 def preprocess_batch(
     image_paths: List[Path],
+    use_zscore: bool = False,
     output_dtype: type = np.float32
 )->np.ndarray:
     """
@@ -125,6 +122,7 @@ def preprocess_batch(
     Args:
         image_paths:List of paths to .jpg files
         output_dtype: Output data type (default: float32)
+        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Batch array shape: (batch_size, 227, 227 3)
@@ -135,7 +133,7 @@ def preprocess_batch(
 
     for i, img_path in enumerate(image_paths):
         #Use our single_image function
-        processed = preprocess_single_image(img_path)
+        processed = preprocess_single_image(img_path, use_zscore)
         batch_array[i] = processed
 
     return batch_array
@@ -265,7 +263,8 @@ def create_array_dataloader(
     samples: List[Tuple[Path, int]],
     batch_size: int = 32,
     shuffle: bool = True,
-    seed: int = 42
+    seed: int = 42,
+    use_zscore: bool = False
 ):
     """
     Create a DataLoader that yields batches (more memory efficient)
@@ -275,6 +274,7 @@ def create_array_dataloader(
         batch_size: Images per batch
         shuffle: Whether to shuffle data
         seed: Random seed
+        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Yields:
         (batch_images, batch_labels) per iteration
@@ -300,7 +300,7 @@ def create_array_dataloader(
         batch_labels = labels[start_idx:end_idx]
 
         # Process this batch
-        batch_images = preprocess_batch(batch_paths)
+        batch_images = preprocess_batch(batch_paths, use_zscore)
 
         yield batch_images, batch_labels
 
@@ -309,6 +309,7 @@ def load_data(
     balanced: bool = True,
     batch_size: int = 32,
     use_weighted_sampling: bool = False,
+    use_zscore: bool = False,
     samples_per_class: int = 358,
     seed: int = 42
 ) ->Generator[Tuple[np.array, np.ndarray], None, None]:
@@ -324,6 +325,7 @@ def load_data(
         batch_size: Number of images per batch
         samples_per_class: For balanced mode only
         seed: Random seed for reproducibility
+        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Generator yielding (images, labels) batches
@@ -336,7 +338,7 @@ def load_data(
         print (f"Total images: {len(samples)}")
 
         #Create loader for balanced data
-        loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed)
+        loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore = use_zscore)
 
     else:
         print(f"Creating FULL dataset (all available data)")
@@ -355,11 +357,11 @@ def load_data(
             print(f"Applying weighted sampling strategy")
             #Resample the entire dataset with weights
             resampled_samples = create_weighted_sampler(samples, seed=seed)
-            loader = create_array_dataloader(resampled_samples, batch_size=batch_size, shuffle=True, seed=seed)
+            loader = create_array_dataloader(resampled_samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore = use_zscore)
 
         else:
             #Standard imbalanced loader
             print(f"Using imbalanced data without weighting")
-            loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed)
+            loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore=use_zscore)
 
     return loader
