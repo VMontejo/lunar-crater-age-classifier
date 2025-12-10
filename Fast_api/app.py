@@ -9,7 +9,7 @@ from tensorflow.keras.applications.vgg16 import preprocess_input as vgg16_prepro
 
 # --- 1. Constants and Global Variables ---
 # NOTE: Adjust this path when not local
-MODEL_PATH = "notebooks/grace/grace_best_model.keras"
+MODEL_PATH = "models/grace_best_model.keras"
 TARGET_SIZE = (227, 227)
 CLASS_NAMES = ["New Crater (0)", "Old Crater (1)", "No Crater (2)"]
 global model
@@ -32,6 +32,10 @@ app = FastAPI(
     version="0.1.0",
     description="API for classifying lunar image chipouts."
 )
+
+@app.get("/")
+async def root():
+    return {"message": "Lunar Crater Age Classifier API", "docs": "/docs"}
 
 # --- 4. Startup Event: Load Model ---
 # This ensures the model is loaded only once when the server starts.
