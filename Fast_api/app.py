@@ -33,6 +33,10 @@ app = FastAPI(
     description="API for classifying lunar image chipouts."
 )
 
+@app.get("/")
+async def root():
+    return {"message": "Lunar Crater Age Classifier API", "docs": "/docs"}
+
 # --- 4. Startup Event: Load Model ---
 # This ensures the model is loaded only once when the server starts.
 @app.on_event("startup")
