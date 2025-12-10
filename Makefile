@@ -15,7 +15,10 @@ run-api:
 open-docs:
 	open http://127.0.0.1:8000/docs
 
-api: run-api open-docs
+api:
+	$(MAKE) run-api &
+	@sleep 2
+	$(MAKE) open-docs
 
 # ----------------------------------
 #         HEROKU COMMANDS
