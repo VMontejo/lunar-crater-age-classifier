@@ -90,6 +90,7 @@ def preprocess_single_image(image_path: Path, use_zscore: bool = False) -> np.nd
 
     Args:
         image_path: Path to .jpg file
+        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Preprocessed image array, ready for models
@@ -120,6 +121,7 @@ def preprocess_batch(
     Args:
         image_paths:List of paths to .jpg files
         output_dtype: Output data type (default: float32)
+        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Batch array shape: (batch_size, 227, 227 3)
@@ -271,6 +273,7 @@ def create_array_dataloader(
         batch_size: Images per batch
         shuffle: Whether to shuffle data
         seed: Random seed
+        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Yields:
         (batch_images, batch_labels) per iteration
@@ -321,6 +324,7 @@ def load_data(
         batch_size: Number of images per batch
         samples_per_class: For balanced mode only
         seed: Random seed for reproducibility
+        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Generator yielding (images, labels) batches
