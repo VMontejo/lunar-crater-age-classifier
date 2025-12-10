@@ -13,6 +13,7 @@ Use load_data and you will get:
 # 6. Class imbalance handled (if requested)
 # 7. Shuffled for training
 # 8. Ready for CNN input
+
 """
 import random
 import numpy as np
