@@ -1,3 +1,5 @@
+.PHONY: run-api open-docs api install_requirements
+
 # ----------------------------------
 #         LOCAL SET UP
 # ----------------------------------
