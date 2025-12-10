@@ -1,9 +1,9 @@
-.PHONY: run-api open-docs api install_requirements
+.PHONY: run-api open-docs api install
 
 # ----------------------------------
 #         LOCAL SET UP
 # ----------------------------------
-install_requirements:
+install:
 	@pip install -r requirements.txt
 
 # ----------------------------------
