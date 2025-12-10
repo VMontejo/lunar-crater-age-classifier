@@ -25,3 +25,13 @@ api:
 # ----------------------------------
 #streamlit:
 #	-@streamlit run app.py # uncomment when implementing UI
+
+# ----------------------------------
+#             DOCKER
+# ----------------------------------
+# Run the Docker image locally
+docker-run:
+	docker run -it --rm \
+		-p 8000:8000 \
+		--env-file .env \
+		$(shell docker images "lunar-crater-*:dev" --format "{{.Repository}}:{{.Tag}}" | head -1)
