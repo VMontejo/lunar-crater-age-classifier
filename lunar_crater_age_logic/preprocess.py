@@ -5,14 +5,14 @@ This module contains all functions needed to load, preprocess, and batch
 lunar crater images for training a CNN model
 
 Use load_data and you will get:
-# 1. ✅ All images loaded
-# 2. ✅ Validated to 227x227
-# 3. ✅ Converted to RGB if needed
-# 4. ✅ Normalized (z-score)
-# 5. ✅ Batched efficiently
-# 6. ✅ Class imbalance handled (if requested)
-# 7. ✅ Shuffled for training
-# 8. ✅ Ready for CNN input
+# 1. All images loaded
+# 2. Validated to 227x227
+# 3. Converted to RGB if needed
+# 4. Normalized (z-score)
+# 5. Batched efficiently
+# 6. Class imbalance handled (if requested)
+# 7. Shuffled for training
+# 8. Ready for CNN input
 """
 import random
 import numpy as np
