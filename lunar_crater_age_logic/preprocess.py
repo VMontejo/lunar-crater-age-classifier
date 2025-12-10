@@ -132,7 +132,7 @@ def preprocess_batch(
 
     for i, img_path in enumerate(image_paths):
         #Use our single_image function
-        processed = preprocess_single_image(img_path, use_zscore)
+        processed = preprocess_single_image(img_path, output_dtype = output_dtype, use_zscore)
         batch_array[i] = processed
 
     return batch_array
