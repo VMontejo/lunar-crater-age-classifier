@@ -112,8 +112,8 @@ def preprocess_single_image(image_path: Path, use_zscore: bool = False) -> np.nd
 
 def preprocess_batch(
     image_paths: List[Path],
-    output_dtype: type = np.float32,
-    use_zscore: bool = False
+    use_zscore: bool = False,
+    output_dtype: type = np.float32
 )->np.ndarray:
     """
     Process multiple images efectively in batch
@@ -132,7 +132,7 @@ def preprocess_batch(
 
     for i, img_path in enumerate(image_paths):
         #Use our single_image function
-        processed = preprocess_single_image(img_path, output_dtype = output_dtype, use_zscore)
+        processed = preprocess_single_image(img_path, use_zscore)
         batch_array[i] = processed
 
     return batch_array
