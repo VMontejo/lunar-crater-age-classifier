@@ -1,15 +1,22 @@
 # Base stage
 FROM python:3.10.6-slim
 
-# Set the working directory
-WORKDIR /prod
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    MODEL_PATH=/models/grace_best_model.keras
 
 # Libraries required by OpenCV
-RUN apt-get update
-RUN apt-get install \
-  'ffmpeg'\
-  'libsm6'\
-  'libxext6'  -y
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set the working directory
+WORKDIR /prod
 
 # Leverage Docker's build cache
 COPY requirements.txt requirements.txt
