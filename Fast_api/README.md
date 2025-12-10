@@ -21,9 +21,15 @@ The easiest way to test a file upload endpoint is via the Swagger UI generated b
 Open your browser to: http://127.0.0.1:8000/docs and use the /predict form to upload
 a sample image.
 
-Alternatively, you can run:
+Alternatively, you can simply run:
 
 ```bash
-curl http://127.0.0.1:8000/health
-# Expected Output: {"status":"ok","message":"Service operational.","environment":"local"}
+# Just run the API
+make run-api
+
+# Just open the docs (if API is already running)
+make open-docs
+
+# Both: start API AND open docs in browser
+make api
 ```
