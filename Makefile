@@ -1,4 +1,4 @@
-.PHONY: run-api open-docs api install
+.PHONY: run-api open-docs api install docker-run
 
 # ----------------------------------
 #         LOCAL SET UP
