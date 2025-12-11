@@ -132,6 +132,7 @@ INFO_CARDS = [
     {'title': 'No Crater', 'age': 'Surface terrain', 'color': 'gray', 'hex': '#9ca3af'}
 ]
 
+
 def init_session_state():
     """Initialize session state variables"""
     defaults = {
@@ -143,6 +144,7 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
+
 def render_header():
     """Render page header"""
     st.markdown("""
@@ -153,6 +155,7 @@ def render_header():
             </p>
         </div>
     """, unsafe_allow_html=True)
+
 
 def render_upload_section():
     """Render image upload section"""
@@ -271,6 +274,7 @@ def classify_image(uploaded_file, image):
 
     st.rerun()
 
+
 def simulate_classification(image):
     """Simulate classification for demo/fallback"""
     import random
@@ -295,6 +299,7 @@ def get_confidence_badge_class(confidence):
     elif confidence >= 70:
         return "confidence-medium"
     return "confidence-low"
+
 
 def render_result_section():
     """Render classification results"""
@@ -355,6 +360,7 @@ def render_result_section():
             use_container_width=True
         )
 
+
 def render_info_cards():
     """Render information cards about crater types"""
     if st.session_state.classification_result or st.session_state.processing:
@@ -376,6 +382,7 @@ def render_info_cards():
                 </div>
             """, unsafe_allow_html=True)
 
+
 def classify_page():
     """Main classify page"""
     st.markdown(STYLES, unsafe_allow_html=True)
@@ -388,6 +395,7 @@ def classify_page():
         render_result_section()
 
     render_footer()
+
 
 def main():
     """Main entry point"""
