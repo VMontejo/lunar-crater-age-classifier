@@ -9,7 +9,7 @@ from keras.applications.vgg16 import preprocess_input as vgg16_preprocess_input
 
 # --- 1. Constants and Global Variables ---
 # NOTE: Adjust this path when not local
-MODEL_PATH = "models/grace_best_model.keras"
+MODEL_PATH = "notebooks/grace/grace_best_model.keras"
 TARGET_SIZE = (227, 227)
 CLASS_NAMES = ["New Crater (0)", "Old Crater (1)", "No Crater (2)"]
 global model
