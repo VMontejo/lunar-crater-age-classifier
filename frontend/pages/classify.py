@@ -4,7 +4,20 @@ import json
 import requests
 from io import BytesIO
 from PIL import Image
-import numpy as np
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import utils
+sys.path.append(str(Path(__file__).parent.parent))
+
+from utils.layout import init_layout, render_footer
+from utils.navigation import render_sidebar_navigation
+
+# Initialize layout
+init_layout(page_title="Classify - LunarCrater", page_icon="🔬")
+
+# Render navigation
+render_sidebar_navigation()
 
 # Backend Configuration
 BACKEND_URL = st.session_state.get('backend_url', 'http://localhost:8000')
@@ -171,7 +184,6 @@ def render_upload_section():
             if st.button("🔬 Classify Image", use_container_width=True, type="primary"):
                 classify_image(uploaded_file, image)
 
-
 def parse_backend_response(response_data):
     """Parse backend response and map to frontend format"""
     class_index = response_data['class_index']
@@ -202,7 +214,6 @@ def parse_backend_response(response_data):
         'description': class_info['description'],
         'raw_response': response_data
     }
-
 
 def classify_image(uploaded_file, image):
     """Handle image classification with backend API"""
@@ -280,7 +291,6 @@ def simulate_classification(image):
     }
 
     return parse_backend_response(simulated_response)
-
 
 def get_confidence_badge_class(confidence):
     """Get CSS class for confidence badge"""
@@ -384,13 +394,13 @@ def classify_page():
     else:
         render_result_section()
 
-    render_info_cards()
+    render_footer()
 
 
 def main():
     """Main entry point"""
     st.set_page_config(
-        page_title="Classify - LunarAge Classifier",
+        page_title="Classify - LunarCrater",
         page_icon="🔬",
         layout="wide",
         initial_sidebar_state="collapsed"
