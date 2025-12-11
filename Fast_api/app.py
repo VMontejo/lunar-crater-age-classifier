@@ -5,11 +5,11 @@ import io
 import numpy as np
 import tensorflow as tf
 from PIL import Image
-from tensorflow.keras.applications.vgg16 import preprocess_input as vgg16_preprocess_input
+from keras.applications.vgg16 import preprocess_input as vgg16_preprocess_input
 
 # --- 1. Constants and Global Variables ---
 # NOTE: Adjust this path when not local
-MODEL_PATH = "models/grace_best_model.keras"
+MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),"models/grace_best_model.keras")
 TARGET_SIZE = (227, 227)
 CLASS_NAMES = ["New Crater (0)", "Old Crater (1)", "No Crater (2)"]
 global model
@@ -29,7 +29,7 @@ class PredictionResponse(BaseModel):
 # --- 3. FastAPI Application Definition ---
 app = FastAPI(
     title="Lunar Crater Age Classifier API",
-    version="0.1.0",
+    version="0.0.1",
     description="API for classifying lunar image chipouts."
 )
 
