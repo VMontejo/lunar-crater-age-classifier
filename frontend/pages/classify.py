@@ -81,22 +81,34 @@ STYLES = """
 </style>
 """
 
-# Classification descriptions
-CLASSIFICATION_INFO = {
-    'fresh_crater': {
+# Class mapping from backend
+CLASS_MAPPING = {
+    0: {
+        'classification': 'fresh_crater',
+        'display_name': 'Fresh Crater',
+        'color': 'purple',
         'icon': '🌟',
         'title': 'Fresh Crater Detected',
-        'description': 'This crater shows signs of recent impact with visible ejecta material. The sharp edges and bright rays indicate it formed relatively recently in geological terms.'
+        'description': 'This crater shows signs of recent impact with visible ejecta material. The sharp edges and bright rays indicate it formed relatively recently in geological terms.',
+        'age_range': (100, 900)  # million years
     },
-    'old_crater': {
+    1: {
+        'classification': 'old_crater',
+        'display_name': 'Old Crater',
+        'color': 'blue',
         'icon': '⏳',
         'title': 'Old Crater Detected',
-        'description': 'This crater shows signs of degradation with softened edges and filled interior. The lack of visible ejecta suggests it formed over a billion years ago.'
+        'description': 'This crater shows signs of degradation with softened edges and filled interior. The lack of visible ejecta suggests it formed over a billion years ago.',
+        'age_range': (1.0, 3.5)  # billion years
     },
-    'none': {
+    2: {
+        'classification': 'none',
+        'display_name': 'No Crater Detected',
+        'color': 'gray',
         'icon': '🌑',
         'title': 'No Crater Detected',
-        'description': 'The analyzed region appears to be lunar surface terrain without a significant crater formation.'
+        'description': 'The analyzed region appears to be lunar surface terrain without a significant crater formation.',
+        'age_range': None
     }
 }
 
@@ -106,6 +118,7 @@ INFO_CARDS = [
     {'title': 'Old Crater', 'age': '> 1 billion years', 'color': 'blue', 'hex': '#60a5fa'},
     {'title': 'No Crater', 'age': 'Surface terrain', 'color': 'gray', 'hex': '#9ca3af'}
 ]
+
 
 def init_session_state():
     """Initialize session state variables"""
@@ -118,6 +131,7 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
+
 def render_header():
     """Render page header"""
     st.markdown("""
@@ -128,6 +142,7 @@ def render_header():
             </p>
         </div>
     """, unsafe_allow_html=True)
+
 
 def render_upload_section():
     """Render image upload section"""
@@ -148,13 +163,46 @@ def render_upload_section():
         # Preview
         _, col, _ = st.columns([1, 2, 1])
         with col:
-            st.image(image, caption="Preview", width="stretch")
+            st.image(image, caption="Preview", use_container_width=True)
 
         # Classify button
         _, col, _ = st.columns([1, 1, 1])
         with col:
-            if st.button("🔬 Classify Image", width="stretch", type="primary"):
+            if st.button("🔬 Classify Image", use_container_width=True, type="primary"):
                 classify_image(uploaded_file, image)
+
+
+def parse_backend_response(response_data):
+    """Parse backend response and map to frontend format"""
+    class_index = response_data['class_index']
+    confidence = response_data['confidence'] * 100  # Convert to percentage
+
+    class_info = CLASS_MAPPING[class_index]
+
+    # Calculate estimated age based on class
+    estimated_age = None
+    if class_info['age_range']:
+        if class_index == 0:  # Fresh crater (million years)
+            import random
+            age = random.randint(*class_info['age_range'])
+            estimated_age = f"{age} million years"
+        elif class_index == 1:  # Old crater (billion years)
+            import random
+            age = random.uniform(*class_info['age_range'])
+            estimated_age = f"{age:.1f} billion years"
+
+    return {
+        'classification': class_info['classification'],
+        'display_name': class_info['display_name'],
+        'confidence': round(confidence, 1),
+        'estimated_age': estimated_age,
+        'color': class_info['color'],
+        'icon': class_info['icon'],
+        'title': class_info['title'],
+        'description': class_info['description'],
+        'raw_response': response_data
+    }
+
 
 def classify_image(uploaded_file, image):
     """Handle image classification with backend API"""
@@ -170,60 +218,69 @@ def classify_image(uploaded_file, image):
             image.save(img_byte_arr, format='PNG')
             img_byte_arr.seek(0)
 
-            # Call backend API
-            files = {'file': ('image.png', img_byte_arr, 'image/png')}
-            response = requests.post(f"{BACKEND_URL}/predict", files=files, timeout=30)
+            # Update progress - preparation
+            for i in range(30):
+                time.sleep(0.01)
+                progress_bar.progress(i + 1)
 
-            # Update progress
-            for i in range(100):
+            # Call backend API
+            files = {'file': (uploaded_file.name, img_byte_arr, 'image/png')}
+            response = requests.post(
+                f"{BACKEND_URL}/classify",
+                files=files,
+                timeout=30
+            )
+
+            # Update progress - processing
+            for i in range(30, 90):
                 time.sleep(0.01)
                 progress_bar.progress(i + 1)
 
             if response.status_code == 200:
-                result = response.json()
+                backend_data = response.json()
+                result = parse_backend_response(backend_data)
+                st.success(f"✅ {backend_data.get('message', 'Classification complete!')}")
             else:
-                st.error(f"Backend error: {response.status_code}")
+                st.error(f"Backend error: {response.status_code} - {response.text}")
                 result = simulate_classification(image)  # Fallback
 
-        except requests.exceptions.RequestException as e:
-            st.warning("Could not connect to backend. Using simulation mode.")
+        except requests.exceptions.ConnectionError:
+            st.warning("⚠️ Could not connect to backend. Using simulation mode.")
             result = simulate_classification(image)
+        except requests.exceptions.Timeout:
+            st.error("⏱️ Backend request timed out. Please try again.")
+            result = simulate_classification(image)
+        except Exception as e:
+            st.error(f"❌ Unexpected error: {str(e)}")
+            result = simulate_classification(image)
+
+        # Complete progress
+        progress_bar.progress(100)
+        time.sleep(0.3)
 
         st.session_state.classification_result = result
         st.session_state.processing = False
 
     st.rerun()
 
+
 def simulate_classification(image):
     """Simulate classification for demo/fallback"""
     import random
 
     rand = random.random()
+    class_index = 0 if rand < 0.11 else (1 if rand < 0.29 else 2)
 
-    if rand < 0.11:  # 11% fresh craters
-        return {
-            "classification": "fresh_crater",
-            "display_name": "Fresh Crater",
-            "confidence": random.randint(70, 95),
-            "estimated_age": f"{random.randint(100, 900)} million years",
-            "color": "purple"
-        }
-    elif rand < 0.29:  # 18% old craters
-        return {
-            "classification": "old_crater",
-            "display_name": "Old Crater",
-            "confidence": random.randint(75, 92),
-            "estimated_age": f"{random.uniform(1.0, 3.5):.1f} billion years",
-            "color": "blue"
-        }
-    else:  # 71% no crater
-        return {
-            "classification": "none",
-            "display_name": "No Crater Detected",
-            "confidence": random.randint(80, 98),
-            "estimated_age": None,
-            "color": "gray"
-        }
+    # Simulate backend response
+    simulated_response = {
+        'class_name': f"{CLASS_MAPPING[class_index]['display_name']} ({class_index})",
+        'class_index': class_index,
+        'confidence': random.uniform(0.65, 0.95),
+        'message': 'Simulated classification (backend unavailable)'
+    }
+
+    return parse_backend_response(simulated_response)
+
 
 def get_confidence_badge_class(confidence):
     """Get CSS class for confidence badge"""
@@ -233,16 +290,16 @@ def get_confidence_badge_class(confidence):
         return "confidence-medium"
     return "confidence-low"
 
+
 def render_result_section():
     """Render classification results"""
     result = st.session_state.classification_result
     image = st.session_state.image_preview
-    info = CLASSIFICATION_INFO[result['classification']]
 
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        st.image(image, width="stretch", caption="Analyzed Image")
+        st.image(image, use_container_width=True, caption="Analyzed Image")
 
     with col2:
         st.markdown("### Classification Result")
@@ -263,26 +320,36 @@ def render_result_section():
         # Details
         st.markdown("---")
         st.markdown("##### Details")
-        st.info(f"{info['icon']} **{info['title']}**\n\n{info['description']}")
+        st.info(f"{result['icon']} **{result['title']}**\n\n{result['description']}")
 
     # Action buttons
     st.markdown("<br>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🔄 Classify Another Image", width="stretch"):
+        if st.button("🔄 Classify Another Image", use_container_width=True):
             st.session_state.classification_result = None
             st.session_state.image_preview = None
             st.rerun()
 
     with col2:
+        # Prepare download data (exclude icon/title/description for cleaner JSON)
+        download_data = {
+            'classification': result['classification'],
+            'display_name': result['display_name'],
+            'confidence': result['confidence'],
+            'estimated_age': result['estimated_age'],
+            'backend_response': result.get('raw_response')
+        }
+
         st.download_button(
             label="💾 Download Results",
-            data=json.dumps(result, indent=2),
+            data=json.dumps(download_data, indent=2),
             file_name="classification_result.json",
             mime="application/json",
-            width="stretch"
+            use_container_width=True
         )
+
 
 def render_info_cards():
     """Render information cards about crater types"""
@@ -305,6 +372,7 @@ def render_info_cards():
                 </div>
             """, unsafe_allow_html=True)
 
+
 def classify_page():
     """Main classify page"""
     st.markdown(STYLES, unsafe_allow_html=True)
@@ -318,6 +386,7 @@ def classify_page():
 
     render_info_cards()
 
+
 def main():
     """Main entry point"""
     st.set_page_config(
@@ -327,7 +396,6 @@ def main():
         initial_sidebar_state="collapsed"
     )
     classify_page()
-
 
 if __name__ == "__main__":
     main()

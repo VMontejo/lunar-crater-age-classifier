@@ -5,7 +5,7 @@ import io
 import numpy as np
 import tensorflow as tf
 from PIL import Image
-from tensorflow.keras.applications.vgg16 import preprocess_input as vgg16_preprocess_input
+from keras.applications.vgg16 import preprocess_input as vgg16_preprocess_input
 
 # --- 1. Constants and Global Variables ---
 # NOTE: Adjust this path when not local
@@ -29,7 +29,7 @@ class PredictionResponse(BaseModel):
 # --- 3. FastAPI Application Definition ---
 app = FastAPI(
     title="Lunar Crater Age Classifier API",
-    version="0.1.0",
+    version="0.0.1",
     description="API for classifying lunar image chipouts."
 )
 
