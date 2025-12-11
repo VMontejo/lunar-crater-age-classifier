@@ -4,23 +4,11 @@ Lunar Crater Age classification - Data Preprocessing Pipeline
 This module contains all functions needed to load, preprocess, and batch
 lunar crater images for training a CNN model
 
-Use load_data and you will get:
-# 1. All images loaded
-# 2. Validated to 227x227
-# 3. Converted to RGB if needed
-# 4. Normalized (z-score)
-# 5. Batched efficiently
-# 6. Class imbalance handled (if requested)
-# 7. Shuffled for training
-# 8. Ready for CNN input
-
 """
-import random
-import numpy as np
-from typing import List, Tuple, Generator
-from collections import Counter
+import tensorflow as tf
 from pathlib import Path
-from PIL import Image
+from typing import Tuple, Callable, List
+
 
 #-------------------------------------------------------------------------------
 # CONSTANTS
@@ -30,338 +18,376 @@ IMAGE_SIZE = (227, 227)
 CLASS_NAMES = ["ejecta", "oldcrater", "none"]
 
 #Z-score normalization parameters (pre-calculated from lunar dataset)
-NORM_MEAN = 0.3306  #Averge moon brightness (dark grey)
+NORM_MEAN = 0.3306  #Average moon brightness (dark grey)
 NORM_STD = 0.1618   #Standard deviation of moon brightness
+
+MODEL_PREPROCESS = {
+    'vgg16': tf.keras.applications.vgg16.preprocess_input,
+    'resnet50': tf.keras.applications.resnet50.preprocess_input,
+    'custom': None  # No special preprocessing
+}
+
+SUPPORTED_MODELS = ['vgg16', 'resnet50', 'custom']
 
 #-------------------------------------------------------------------------------
 # FUNCTIONS - single image processing
 #-------------------------------------------------------------------------------
 
-def load_and_validate_image(path: Path) -> np.ndarray:
+def load_and_validate_image_tf(file_path: tf.Tensor) -> tf.Tensor:
     """
-    Load image and ensure its 227 x 227 RGB
-    Returns: Numpy array shape (227,227,3)
+    Load and validate image using TensorFlow ops.
 
     Args:
-        Path to the .jpg file
+        file_path: TensorFlow string tensor with file path
 
     Returns:
-        NumPy array of shape (227, 227, 3) with dtype uint8 (0-255)
+        Image tensor (227, 227, 3), uint8
     """
-    with Image.open(path) as img:
-        #Convert to RGB if needed
-        if img.mode != 'RGB':
-            img = img.convert("RGB")
+    # Load image
+    image = tf.io.read_file(file_path)
+    image = tf.image.decode_jpeg(image, channels=3)
 
-        #Check size
-        if img.size != IMAGE_SIZE:
-            raise ValueError(f"Image {path.name} is {img.size}, expected {IMAGE_SIZE}")
+    # Resize to target (automatically validates size)
+    image = tf.image.resize(image, IMAGE_SIZE)
+    image = tf.cast(image, tf.uint8)
 
-        return np.array(img) #Shape (227, 227, 3), dtype: uint8
+    return image
 
 
-def normalize_image(image_array: np.ndarray, use_zscore: bool = False) -> np.ndarray:
+def normalize_image_tf(
+    image: tf.Tensor,
+    normalization: str = 'simple',
+    model_type: str = 'custom'
+) -> tf.Tensor:
     """
-    Applies normalization to lunar crater images
+    Normalize image tensor for specific model type.
 
     Args:
-        img_array: NumPy array from load_and_validate_image()
-        use_zscore: If True, apply z.score; if false, just /255.0
+        image: TensorFlow image tensor (227, 227, 3), uint8
+        normalization: 'simple', 'zscore', or 'model'
+        model_type: 'vgg16', 'resnet50', or 'custom'
 
     Returns:
-        Normalized array, shape (227, 227, 3), dtype:float32
+        Normalized float32 tensor
     """
-    img_float = image_array.astype(np.float32) / 255.0
+    # Convert to float32
+    image = tf.cast(image, tf.float32)
 
-    if use_zscore:
-        #Z-score normalization using our calculated statistics
-        return (img_float - NORM_MEAN) / NORM_STD
+    if normalization == 'simple':
+        return image / 255.0
 
-    return img_float
+    elif normalization == 'zscore':
+        image_normalized = image / 255.0
+        return (image_normalized - NORM_MEAN) / NORM_STD
+
+    elif normalization == 'model':
+        if model_type in ['vgg16', 'resnet50']:
+            return MODEL_PREPROCESS[model_type](image)
+        else:  # custom
+            return image / 255.0
+    else:
+        raise ValueError(f"Normalization '{normalization}' not supported")
 
 
-def preprocess_single_image(image_path: Path, use_zscore: bool = False) -> np.ndarray:
+def preprocess_single_image_tf(
+    file_path: tf.Tensor,
+    label: tf.Tensor,
+    normalization: str = 'simple',
+    model_type: str = 'custom'
+) -> Tuple[tf.Tensor, tf.Tensor]:
     """
-    Complete preprocessing for one lunar image
-    Combines loading, validation and normalization in one call
-
-    Pipeline:
-        1.load_and_validate_image()-
-        2.normalize_image() - applies z-score normalization
+    Complete preprocessing pipeline for one image.
 
     Args:
-        image_path: Path to .jpg file
-        use_zscore: if True use z-score normalization otherwise just / 255.0
+        file_path: Tensor with file path
+        label: Integer class label
+        normalization: 'simple', 'zscore', or 'model'
+        model_type: 'vgg16', 'resnet50', or 'custom'
 
     Returns:
-        Preprocessed image array, ready for models
-        Shape: (227, 227, 3), dtype: float32
-        Values normalized
+        (image_tensor, label_tensor)
     """
+    # 1. Load image
+    image = load_and_validate_image_tf(file_path)
 
-    #Step 1: Load and validate
-    raw_image = load_and_validate_image(image_path)
+    # 2. Normalize
+    image = normalize_image_tf(image, normalization, model_type)
 
-    #Step 2: Normalize
-    process_image = normalize_image(raw_image, use_zscore)
+    return image, label
 
-    return process_image
+# ------------------------------------------------------------------------------
+# BALANCING FUNCTIONS
+# ------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
-# FUNCTIONS - batch processing
-#-------------------------------------------------------------------------------
-
-def preprocess_batch(
-    image_paths: List[Path],
-    use_zscore: bool = False,
-    output_dtype: type = np.float32
-)->np.ndarray:
-    """
-    Process multiple images efectively in batch
-
-    Args:
-        image_paths:List of paths to .jpg files
-        output_dtype: Output data type (default: float32)
-        use_zscore: if True use z-score normalization otherwise just / 255.0
-
-    Returns:
-        Batch array shape: (batch_size, 227, 227 3)
-        batch_size = len(image_paths)
-    """
-    batch_size = len(image_paths)
-    batch_array = np.zeros((batch_size, 227, 227, 3), dtype=output_dtype)
-
-    for i, img_path in enumerate(image_paths):
-        #Use our single_image function
-        processed = preprocess_single_image(img_path, use_zscore)
-        batch_array[i] = processed
-
-    return batch_array
-
-#-------------------------------------------------------------------------------
-# FUNCTIONS - Dataset Management
-#-------------------------------------------------------------------------------
-
-def create_balanced_subset(
+def create_balanced_subset_tf(
     data_dir: Path,
-    samples_per_class: int =358,     #Match the smallest class(ejecta)
+    subset: str = 'train',
+    samples_per_class: int = 358,
     seed: int = 42
-)->List[Tuple[Path, int]]:
+) -> Tuple[List[str], List[int]]:
     """
-    Create a balance data set by downsampling the majority class.
+    Create balanced dataset by downsampling majority class.
 
     Args:
-        data_dir: Path to folder with class subfolders (ejecta/train/none)
-        samples_per_class: Number of samples per class (default to ejecta count)
-        seed: Random seed for reproductibility
+        data_dir: Base directory
+        subset: 'train', 'val', or 'test'
+        samples_per_class: Number of samples per class
+        seed: Random seed
 
     Returns:
-        List of(image_path, class_index) tuples
-        class_index: 0=ejecta, 1=oldcrater, 2=none
+        (file_paths, labels) for balanced subset
     """
+    import random
     random.seed(seed)
-    balance_samples = []
+
+    file_paths = []
+    labels = []
+
+    subset_path = data_dir / subset
 
     for class_idx, class_name in enumerate(CLASS_NAMES):
-        class_path = data_dir / class_name
-        all_files = list(class_path.glob("*.jpg"))
+        class_path = subset_path / class_name
+        if class_path.exists():
+            image_files = list(class_path.glob("*.jpg"))
 
-        if not all_files:
-            raise FileNotFoundError(f"No images found in {class_path}")
+            selected = random.sample(image_files, min(samples_per_class, len(image_files)))
 
-        if class_name == "none":
-            #Downsample majority class
-            selected = random.sample(all_files, samples_per_class)
-        else:
-            selected = all_files[:min(samples_per_class, len(all_files))]
+            file_paths.extend([str(p) for p in selected])
+            labels.extend([class_idx] * len(selected))
 
-        balance_samples.extend([(img_path, class_idx) for img_path in selected])
+    print(f"Balanced {subset}: {len(file_paths)} images ({samples_per_class} per class)")
+    return file_paths, labels
 
-    print(f"Balanced subset: {samples_per_class} samples per class")
-    print(f"Total: {len(balance_samples)} images")
-    print(f"Classes: {CLASS_NAMES}")
 
-    return balance_samples
-
-def create_weighted_sampler(
-    samples: List[Tuple[Path, int]],
+def create_weighted_sampler_tf(
+    data_dir: Path,
+    subset: str = 'train',
     seed: int = 42
-)->List[Tuple[Path, int]]:
+) -> Tuple[List[str], List[int]]:
     """
-    Creates a weighted dataset to handle class imbalance.
-    Oversamples minority classes by duplicating samples based on class weights.
-    Returns a resampled list with balanced class distribution
+    Create weighted dataset by oversampling minority classes.
 
     Args:
-        samples: List of (image_path, class_label) tuples
-        seed: Random seed for reproducibility
-    """
+        data_dir: Base directory
+        subset: 'train', 'val', or 'test'
+        seed: Random seed
 
+    Returns:
+        (file_paths, labels) with class balancing
+    """
+    import random
     random.seed(seed)
 
-    #Extract labels from samples
-    labels = [label for _, label in samples]
+    # First collect all data
+    all_file_paths = []
+    all_labels = []
 
-    #Count samples per class
-    class_counts = Counter(labels)
+    subset_path = data_dir / subset
 
+    for class_idx, class_name in enumerate(CLASS_NAMES):
+        class_path = subset_path / class_name
+        if class_path.exists():
+            image_files = list(class_path.glob("*.jpg"))
+            all_file_paths.extend([str(p) for p in image_files])
+            all_labels.extend([class_idx] * len(image_files))
 
-    print(f"Original class distribution:")
-    for class_idx in sorted(class_counts.keys()):
-        class_name = CLASS_NAMES[class_idx]
-        count = class_counts[class_idx]
-        print(f"{class_name}: {count} samples")
+    # Count classes
+    from collections import Counter
+    class_counts = Counter(all_labels)
+    print(f"Original {subset} distribution:")
+    for class_idx, count in sorted(class_counts.items()):
+        print(f"{CLASS_NAMES[class_idx]}: {count} samples")
 
-    #Calculate target number of samples per class (largest class)
+    # Calculate weights
     max_samples = max(class_counts.values())
+    resampled_paths = []
+    resampled_labels = []
 
-    #Calculate weights: target / current count
-    weights = {}
-    resampled_samples = []
+    for class_idx in range(len(CLASS_NAMES)):
+        # Get indices for this class
+        class_indices = [i for i, label in enumerate(all_labels) if label == class_idx]
+        class_samples = [(all_file_paths[i], all_labels[i]) for i in class_indices]
 
-    for class_idx in sorted(class_counts.keys()):
-        class_name = CLASS_NAMES[class_idx]
-        class_samples = [s for s in samples if s[1] == class_idx]
-
-        #weigth how many times we need to replicate
-        weight = max_samples / len(class_samples)
-
-        #determine ho many samples to add
+        # How many to add?
         num_needed = max_samples - len(class_samples)
 
         if num_needed > 0:
-            #Randomly select samples ro duplicate
-            additional_samples = random.choices(class_samples, k = num_needed)
-
-            #Combine original + additional samples
-            resampled_class = class_samples + additional_samples
+            # Oversample: duplicate some samples
+            additional = random.choices(class_samples, k=num_needed)
+            resampled_class = class_samples + additional
         else:
-            #If already has max_samples, just use existing ones
             resampled_class = class_samples
 
-        weights[class_idx] = weight
-        resampled_samples.extend(resampled_class)
+        resampled_paths.extend([p for p, _ in resampled_class])
+        resampled_labels.extend([l for _, l in resampled_class])
 
-    #Shiffle the resampled dataset
-    random.shuffle(resampled_samples)
+    # Shuffle
+    combined = list(zip(resampled_paths, resampled_labels))
+    random.shuffle(combined)
+    resampled_paths, resampled_labels = zip(*combined)
 
-    #Count final distribution
-    final_counts = Counter([label for _, label in resampled_samples])
-    print(f"After weighted resampling")
-    for class_idx in sorted(final_counts.keys()):
-        class_name = CLASS_NAMES[class_idx]
-        count = final_counts[class_idx]
-        weight = weights.get(class_idx, 1.0)
-        print(f"{class_name}: {count} samples (weight: {weight:.2f})")
+    print(f"After weighted sampling: {len(resampled_paths)} images")
+    return list(resampled_paths), list(resampled_labels)
 
-    return resampled_samples
+# ------------------------------------------------------------------------------
+# DATASET CREATION FUNCTIONS
+# ------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
-# FUNCTIONS - Load Data
-#-------------------------------------------------------------------------------
-def create_array_dataloader(
-    samples: List[Tuple[Path, int]],
+def create_tf_dataset(
+    data_dir: Path,
+    subset: str = 'train',
+    model_type: str = 'custom',
+    normalization: str = 'simple',
     batch_size: int = 32,
-    shuffle: bool = True,
+    shuffle: bool = False,
     seed: int = 42,
-    use_zscore: bool = False
-):
+    balanced: bool = False,
+    weighted_sampling: bool = False,
+    samples_per_class: int = 358
+) -> Tuple[tf.data.Dataset, int]:
     """
-    Create a DataLoader that yields batches (more memory efficient)
+    Create a FAST TensorFlow dataset pipeline.
 
     Args:
-        samples: From create_balanced_subset() - list of (path, label)
+        data_dir: Base directory containing train/val/test folders
+        subset: 'train', 'val', or 'test'
+        model_type: 'vgg16', 'resnet50', or 'custom'
+        normalization: 'simple' (/255), 'zscore', or 'model'
         batch_size: Images per batch
         shuffle: Whether to shuffle data
         seed: Random seed
-        use_zscore: if True use z-score normalization otherwise just / 255.0
 
-    Yields:
-        (batch_images, batch_labels) per iteration
-        - batch_images: shape (batch_size, 227, 227, 3), float32
-        - batch_labels: shape (batch_size,), int32
+    Returns:
+        (dataset, num_samples) - tf.data.Dataset ready for model.fit()
     """
-    random.seed(seed)
 
-    if shuffle:
-        random.shuffle(samples)
+    # Choose sampling strategy
+    if balanced:
+        print(f"Using BALANCED sampling ({samples_per_class} per class)")
+        file_paths, labels = create_balanced_subset_tf(
+            data_dir, subset, samples_per_class, seed
+        )
+    elif weighted_sampling:
+        print(f"Using WEIGHTED sampling")
+        file_paths, labels = create_weighted_sampler_tf(data_dir, subset, seed)
+    else:
+        # Original: load all data
+        file_paths = []
+        labels = []
+        subset_path = data_dir / subset
 
-    # Separate paths and labels
-    image_paths = [item[0] for item in samples]
-    labels = np.array([item[1] for item in samples], dtype=np.int32)
+        for class_idx, class_name in enumerate(CLASS_NAMES):
+            class_path = subset_path / class_name
+            if class_path.exists():
+                image_files = list(class_path.glob("*.jpg"))
+                file_paths.extend([str(p) for p in image_files])
+                labels.extend([class_idx] * len(image_files))
 
-    n_samples = len(samples)
+        print(f"{subset}: {len(file_paths)} images for {model_type}")
 
-    # Yield batches
-    for start_idx in range(0, n_samples, batch_size):
-        end_idx = min(start_idx + batch_size, n_samples)
+    if not file_paths:
+        raise FileNotFoundError(f"No images found in {data_dir / subset}")
 
-        batch_paths = image_paths[start_idx:end_idx]
-        batch_labels = labels[start_idx:end_idx]
+    # Create tf.data pipeline
+    dataset = tf.data.Dataset.from_tensor_slices((file_paths, labels))
 
-        # Process this batch
-        batch_images = preprocess_batch(batch_paths, use_zscore)
+    if shuffle and not weighted_sampling:
+        shuffle_buffer = min(len(file_paths), 2000)
+        dataset = dataset.shuffle(shuffle_buffer, seed=seed)
 
-        yield batch_images, batch_labels
+    # Map preprocessing
+    dataset = dataset.map(
+        lambda fp, lbl: preprocess_single_image_tf(fp, lbl, normalization, model_type),
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
+
+    #dataset = dataset.cache()
+
+    # Batch and optimize
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+
+    return dataset, len(file_paths)
 
 def load_data(
     data_dir: Path,
-    balanced: bool = True,
+    model_type: str = 'custom',
+    normalization: str = 'simple',
     batch_size: int = 32,
-    use_weighted_sampling: bool = False,
-    use_zscore: bool = False,
-    samples_per_class: int = 358,
-    seed: int = 42
-) ->Generator[Tuple[np.array, np.ndarray], None, None]:
+    seed: int = 42,
+    train_balanced: bool = False,
+    train_weighted_sampling: bool = False,
+    samples_per_class: int = 358
+) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset, int, int, int]:
     """
-    MAIN FUNCTION- What we should use for loading the data needed for the CNN.
+    MAIN FUNCTION - Load data for VGG16, ResNet50, or Custom CNN.
 
-    Loads and batches lunar crater images for training/validation.
+    Returns datasets ready for model.fit() directly.
 
     Args:
-        data_dir: Path to data folder
-        balanced: True for balanced subset (prototype), false for all data (Final training)
-        use_weighted_sampling: Apply weighted sampling for imbalance data (only works when balanced = false)
-        batch_size: Number of images per batch
-        samples_per_class: For balanced mode only
-        seed: Random seed for reproducibility
-        use_zscore: if True use z-score normalization otherwise just / 255.0
+        data_dir: Base directory containing train/val/test folders
+        model_type: 'vgg16', 'resnet50', or 'custom'
+        normalization: 'simple', 'zscore', or 'model'
+        batch_size: Images per batch
+        seed: Random seed
+        train_balance: if True returns a balance dataset
+        train_weighted_sampling: If True, balance training data by oversampling minority classes
+        samples_per_class: When train_balance = True, the number of samples per class = 358
+
 
     Returns:
-        Generator yielding (images, labels) batches
+        (train_dataset, val_dataset, test_dataset, train_count, val_count, test_count) ->tf.data.Dataset object
+        a Data set object is a pipeline of data that yields samples in batches and is optimized by training.
 
     """
 
-    if balanced:
-        print(f"Creating BALANCED dataset ({samples_per_class} per class)")
-        samples = create_balanced_subset(data_dir, samples_per_class, seed)
-        print (f"Total images: {len(samples)}")
+    print(f"Loading data for {model_type.upper()}")
+    print(f"Normalization: {normalization}")
+    print(f"Batch size: {batch_size}")
+    if train_balanced:
+        print(f"Training: BALANCED ({samples_per_class} per class)")
+    elif train_weighted_sampling:
+        print(f"Training: WEIGHTED sampling")
 
-        #Create loader for balanced data
-        loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore = use_zscore)
+    # Load train dataset (with optional balancing)
+    train_dataset, train_count = create_tf_dataset(
+        data_dir=data_dir,
+        subset='train',
+        model_type=model_type,
+        normalization=normalization,
+        batch_size=batch_size,
+        shuffle=True,
+        seed=seed,
+        balanced=train_balanced,
+        weighted_sampling=train_weighted_sampling,
+        samples_per_class=samples_per_class
+    )
 
-    else:
-        print(f"Creating FULL dataset (all available data)")
-        samples = []
+    # Load validation dataset (always full, no balancing)
+    val_dataset, val_count = create_tf_dataset(
+        data_dir=data_dir,
+        subset='val',
+        model_type=model_type,
+        normalization=normalization,
+        batch_size=batch_size,
+        shuffle=False,
+        seed=seed
+    )
 
-        for class_idx, class_name in enumerate(CLASS_NAMES):
-            class_path = data_dir / class_name
-            all_files = list(class_path.glob("*.jpg"))
-            samples.extend([(img_path, class_idx) for img_path in all_files])
+    # Load test dataset (always full, no balancing)
+    test_dataset, test_count = create_tf_dataset(
+        data_dir=data_dir,
+        subset='test',
+        model_type=model_type,
+        normalization=normalization,
+        batch_size=batch_size,
+        shuffle=False,
+        seed=seed
+    )
 
-            print(f"{class_name}: {len(all_files)} images")
+    print(f"\nData loaded:")
+    print(f"Training: {train_count} images ({train_count // batch_size} batches)")
+    print(f"Validation: {val_count} images ({val_count // batch_size} batches)")
+    print(f"Test: {test_count} images ({test_count // batch_size} batches)")
 
-        print(f"Total images {len(samples)}")
-
-        if use_weighted_sampling:
-            print(f"Applying weighted sampling strategy")
-            #Resample the entire dataset with weights
-            resampled_samples = create_weighted_sampler(samples, seed=seed)
-            loader = create_array_dataloader(resampled_samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore = use_zscore)
-
-        else:
-            #Standard imbalanced loader
-            print(f"Using imbalanced data without weighting")
-            loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore=use_zscore)
-
-    return loader
+    return train_dataset, val_dataset, test_dataset, train_count, val_count, test_count
