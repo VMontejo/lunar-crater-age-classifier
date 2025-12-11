@@ -13,7 +13,6 @@ Use load_data and you will get:
 # 6. Class imbalance handled (if requested)
 # 7. Shuffled for training
 # 8. Ready for CNN input
-
 """
 import random
 import numpy as np
@@ -32,6 +31,7 @@ CLASS_NAMES = ["ejecta", "oldcrater", "none"]
 #Z-score normalization parameters (pre-calculated from lunar dataset)
 NORM_MEAN = 0.3306  #Averge moon brightness (dark grey)
 NORM_STD = 0.1618   #Standard deviation of moon brightness
+
 
 #-------------------------------------------------------------------------------
 # FUNCTIONS - single image processing
@@ -60,27 +60,32 @@ def load_and_validate_image(path: Path) -> np.ndarray:
         return np.array(img) #Shape (227, 227, 3), dtype: uint8
 
 
-def normalize_image(image_array: np.ndarray, use_zscore: bool = False) -> np.ndarray:
+
+def normalize_image(image_array: np.ndarray) -> np.ndarray:
     """
-    Applies normalization to lunar crater images
+    Applies z-score normalization to lunar crater images
+    Converts [0, 255] range -> normalized range ~[-2, +2]
+    Centers data around 0 (mean = 0, std = 1)
+    Helps model to focus on crater features, not brightness
+
+    Formula:
+        1. Scale: img_float = img_array / 255.0
+        2. Normalize: img_normalized = (img_float - 0.3306) / 0.1618
 
     Args:
         img_array: NumPy array from load_and_validate_image()
-        use_zscore: If True, apply z.score; if false, just /255.0
 
     Returns:
         Normalized array, shape (227, 227, 3), dtype:float32
     """
+
+    #Convert to float32 and scale to [0, 1]
     img_float = image_array.astype(np.float32) / 255.0
 
-    if use_zscore:
-        #Z-score normalization using our calculated statistics
-        return (img_float - NORM_MEAN) / NORM_STD
+     #Z-score normalization using our calculated statistics
+    return (img_float - NORM_MEAN) / NORM_STD
 
-    return img_float
-
-
-def preprocess_single_image(image_path: Path, use_zscore: bool = False) -> np.ndarray:
+def preprocess_single_image(image_path: Path) -> np.ndarray:
     """
     Complete preprocessing for one lunar image
     Combines loading, validation and normalization in one call
@@ -91,7 +96,6 @@ def preprocess_single_image(image_path: Path, use_zscore: bool = False) -> np.nd
 
     Args:
         image_path: Path to .jpg file
-        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Preprocessed image array, ready for models
@@ -103,7 +107,7 @@ def preprocess_single_image(image_path: Path, use_zscore: bool = False) -> np.nd
     raw_image = load_and_validate_image(image_path)
 
     #Step 2: Normalize
-    process_image = normalize_image(raw_image, use_zscore)
+    process_image = normalize_image(raw_image)
 
     return process_image
 
@@ -113,7 +117,6 @@ def preprocess_single_image(image_path: Path, use_zscore: bool = False) -> np.nd
 
 def preprocess_batch(
     image_paths: List[Path],
-    use_zscore: bool = False,
     output_dtype: type = np.float32
 )->np.ndarray:
     """
@@ -122,7 +125,6 @@ def preprocess_batch(
     Args:
         image_paths:List of paths to .jpg files
         output_dtype: Output data type (default: float32)
-        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Batch array shape: (batch_size, 227, 227 3)
@@ -133,7 +135,7 @@ def preprocess_batch(
 
     for i, img_path in enumerate(image_paths):
         #Use our single_image function
-        processed = preprocess_single_image(img_path, use_zscore)
+        processed = preprocess_single_image(img_path)
         batch_array[i] = processed
 
     return batch_array
@@ -260,49 +262,46 @@ def create_weighted_sampler(
 # FUNCTIONS - Load Data
 #-------------------------------------------------------------------------------
 def create_array_dataloader(
-    samples: List[Tuple[Path, int]],
+    samples,
     batch_size: int = 32,
     shuffle: bool = True,
     seed: int = 42,
-    use_zscore: bool = False
-):
-    """
-    Create a DataLoader that yields batches (more memory efficient)
+    use_zscore: bool = False,
+    augment: bool = False
+) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
 
-    Args:
-        samples: From create_balanced_subset() - list of (path, label)
-        batch_size: Images per batch
-        shuffle: Whether to shuffle data
-        seed: Random seed
-        use_zscore: if True use z-score normalization otherwise just / 255.0
+    rng = random.Random(seed)
 
-    Yields:
-        (batch_images, batch_labels) per iteration
-        - batch_images: shape (batch_size, 227, 227, 3), float32
-        - batch_labels: shape (batch_size,), int32
-    """
-    random.seed(seed)
-
+    # Shuffle once at start
     if shuffle:
-        random.shuffle(samples)
+        rng.shuffle(samples)
 
-    # Separate paths and labels
-    image_paths = [item[0] for item in samples]
-    labels = np.array([item[1] for item in samples], dtype=np.int32)
+    # Infinite generator
+    while True:
+        batch_paths = []
+        batch_labels = []
 
-    n_samples = len(samples)
+        for img_path, label in samples:
+            batch_paths.append(img_path)
+            batch_labels.append(label)
 
-    # Yield batches
-    for start_idx in range(0, n_samples, batch_size):
-        end_idx = min(start_idx + batch_size, n_samples)
+            if len(batch_paths) == batch_size:
+                images = preprocess_batch(
+                    batch_paths,
+                    use_zscore=use_zscore,
+                    augment=augment    # <-- IMPORTANT
+                )
 
-        batch_paths = image_paths[start_idx:end_idx]
-        batch_labels = labels[start_idx:end_idx]
+                labels = np.array(batch_labels, dtype=np.int32)
 
-        # Process this batch
-        batch_images = preprocess_batch(batch_paths, use_zscore)
+                yield images, labels
 
-        yield batch_images, batch_labels
+                batch_paths = []
+                batch_labels = []
+
+        # reshuffle for next epoch
+        if shuffle:
+            rng.shuffle(samples)
 
 def load_data(
     data_dir: Path,
@@ -325,7 +324,6 @@ def load_data(
         batch_size: Number of images per batch
         samples_per_class: For balanced mode only
         seed: Random seed for reproducibility
-        use_zscore: if True use z-score normalization otherwise just / 255.0
 
     Returns:
         Generator yielding (images, labels) batches
@@ -335,33 +333,47 @@ def load_data(
     if balanced:
         print(f"Creating BALANCED dataset ({samples_per_class} per class)")
         samples = create_balanced_subset(data_dir, samples_per_class, seed)
-        print (f"Total images: {len(samples)}")
 
-        #Create loader for balanced data
-        loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore = use_zscore)
+        loader = create_array_dataloader(
+            samples,
+            batch_size=batch_size,
+            shuffle=True,
+            seed=seed,
+            use_zscore=use_zscore,
+            augment=False                      # NEVER augment balanced validation set
+        )
 
     else:
-        print(f"Creating FULL dataset (all available data)")
+        print("Creating FULL dataset (all available data)")
         samples = []
 
         for class_idx, class_name in enumerate(CLASS_NAMES):
             class_path = data_dir / class_name
             all_files = list(class_path.glob("*.jpg"))
             samples.extend([(img_path, class_idx) for img_path in all_files])
-
             print(f"{class_name}: {len(all_files)} images")
 
-        print(f"Total images {len(samples)}")
-
         if use_weighted_sampling:
-            print(f"Applying weighted sampling strategy")
-            #Resample the entire dataset with weights
+            print("Applying weighted sampling")
             resampled_samples = create_weighted_sampler(samples, seed=seed)
-            loader = create_array_dataloader(resampled_samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore = use_zscore)
+
+            loader = create_array_dataloader(
+                resampled_samples,
+                batch_size=batch_size,
+                shuffle=True,
+                seed=seed,
+                use_zscore=use_zscore,
+                augment=True                     # TRAINING LOADER → AUGMENT ENABLED
+            )
 
         else:
-            #Standard imbalanced loader
-            print(f"Using imbalanced data without weighting")
-            loader = create_array_dataloader(samples, batch_size=batch_size, shuffle=True, seed=seed, use_zscore=use_zscore)
+            loader = create_array_dataloader(
+                samples,
+                batch_size=batch_size,
+                shuffle=False,
+                seed=seed,
+                use_zscore=use_zscore,
+                augment=False                    # VALIDATION LOADER → NO AUGMENT
+            )
 
     return loader
