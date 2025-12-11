@@ -1,4 +1,18 @@
 import streamlit as st
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from utils.layout import init_layout, render_footer
+from utils.navigation import render_sidebar_navigation
+
+# Initialize layout
+init_layout(page_title="About", page_icon="ℹ️")
+
+# Render navigation
+render_sidebar_navigation()
 
 # Constants
 DATASET_INFO = [
@@ -349,11 +363,11 @@ def about_page():
     render_methodology()
     st.markdown("<br>", unsafe_allow_html=True)
 
-    render_data_source()
+    render_footer()
 
 if __name__ == "__main__":
     st.set_page_config(
-        page_title="About - Lunar Crater Age Classifier",
+        page_title="About - LunarCrater",
         page_icon="ℹ️",
         layout="wide",
         initial_sidebar_state="collapsed"
