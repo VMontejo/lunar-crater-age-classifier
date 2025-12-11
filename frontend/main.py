@@ -1,14 +1,15 @@
 import streamlit as st
 from pathlib import Path
 
-def hero_section():
-    """
-    Hero section for the Lunar Crater Age Classifier
-    """
+# Backend Configuration
+BACKEND_URL = st.secrets.get("BACKEND_URL", "http://localhost:8000")  # Will use docker service name in production
 
-    # Custom CSS for styling
+# Shared CSS styles
+def load_styles():
+    """Load shared CSS styles"""
     st.markdown("""
         <style>
+        /* Base Styles */
         .hero-container {
             min-height: 0vh;
             display: flex;
@@ -33,6 +34,7 @@ def hero_section():
             margin-bottom: 2rem;
         }
 
+        /* Typography */
         .main-heading {
             font-size: clamp(2rem, 5vw, 4rem);
             font-weight: 700;
@@ -49,13 +51,13 @@ def hero_section():
 
         .subtitle {
             font-size: 1.25rem;
-            text-align: left;
             color: #9ca3af;
             max-width: 42rem;
             margin: 0 auto 2.5rem;
             line-height: 1.75;
         }
 
+        /* Stats Section */
         .stats-container {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -65,9 +67,7 @@ def hero_section():
             padding-top: 3rem;
         }
 
-        .stat-item {
-            text-align: center;
-        }
+        .stat-item { text-align: center; }
 
         .stat-value {
             font-size: 1.875rem;
@@ -84,84 +84,26 @@ def hero_section():
             margin-top: 0.25rem;
         }
 
-        /* Features Section Styles */
-        .features-section {
-            padding: 6rem 1rem;
-            max-width: 72rem;
-            margin: 0 auto;
-        }
-
-        .features-header {
-            text-align: center;
-            margin-bottom: 4rem;
-        }
-
-        .features-subtitle {
-            color: #9ca3af;
-            max-width: 36rem;
-            margin: 1rem auto 0;
-        }
-
-        .feature-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(139, 92, 246, 0.2);
+        /* Button Styles */
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%) !important;
+            color: white !important;
+            border: none !important;
+            box-shadow: 0 10px 25px -5px rgba(168, 85, 247, 0.25);
             transition: all 0.3s ease;
-            height: 100%;
         }
 
-        .feature-card:hover {
-            background: rgba(255, 255, 255, 0.08);
-            transform: translateY(-4px);
+        .stButton > button[kind="primary"]:hover {
+            background: linear-gradient(135deg, #9333ea 0%, #2563eb 100%) !important;
+            box-shadow: 0 20px 40px -5px rgba(168, 85, 247, 0.4);
+            transform: translateY(-2px);
         }
 
-        .feature-icon {
-            width: 3rem;
-            height: 3rem;
-            border-radius: 0.75rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1rem;
-            font-size: 1.5rem;
-            transition: transform 0.3s ease;
+        .stButton > button[kind="primary"]:active {
+            transform: translateY(0px);
         }
 
-        .feature-card:hover .feature-icon {
-            transform: scale(1.1);
-        }
-
-        .feature-icon-yellow {
-            background: linear-gradient(135deg, #eab308 0%, #f97316 100%);
-        }
-
-        .feature-icon-green {
-            background: linear-gradient(135deg, #22c55e 0%, #10b981 100%);
-        }
-
-        .feature-icon-purple {
-            background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
-        }
-
-        .feature-icon-blue {
-            background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
-        }
-
-        .feature-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: white;
-            margin-bottom: 0.5rem;
-        }
-
-        .feature-description {
-            color: #9ca3af;
-            line-height: 1.75;
-        }
-
-        /* Responsive adjustments */
+        /* Responsive */
         @media (max-width: 640px) {
             .stats-container {
                 grid-template-columns: 1fr;
@@ -171,25 +113,45 @@ def hero_section():
         </style>
     """, unsafe_allow_html=True)
 
-    # Hero content
-    st.markdown('<div class="hero-container">', unsafe_allow_html=True)
+def render_badge(text, icon="✨"):
+    """Render a badge component"""
+    st.markdown(f'<div class="badge">{icon} {text}</div>', unsafe_allow_html=True)
 
-    # Badge
-    st.markdown("""
-        <div class="badge">
-            ✨ AI-Powered Lunar Crater Age Classifier
-        </div>
-    """, unsafe_allow_html=True)
 
-    # Main heading
-    st.markdown("""
+def render_heading(main_text, gradient_text):
+    """Render main heading with gradient"""
+    st.markdown(f"""
         <h1 class="main-heading">
-            <span style="color: white;">Discover the</span><br/>
-            <span class="gradient-text">Age of Lunar Craters</span>
+            <span style="color: white;">{main_text}</span><br/>
+            <span class="gradient-text">{gradient_text}</span>
         </h1>
     """, unsafe_allow_html=True)
 
-    # Subtitle
+
+def render_stats():
+    """Render statistics section"""
+    stats = [
+        {"value": "5,000+", "label": "Labeled Images"},
+        {"value": "3", "label": "Classifications"},
+        {"value": "227×277", "label": "Image Size"}
+    ]
+
+    stats_html = "".join([
+        f'<div class="stat-item"><div class="stat-value">{s["value"]}</div>'
+        f'<div class="stat-label">{s["label"]}</div></div>'
+        for s in stats
+    ])
+
+    st.markdown(f'<div class="stats-container">{stats_html}</div>', unsafe_allow_html=True)
+
+
+def hero_section():
+    """Hero section for the Lunar Crater Age Classifier"""
+    st.markdown('<div class="hero-container">', unsafe_allow_html=True)
+
+    render_badge("AI-Powered Lunar Crater Age Classifier")
+    render_heading("Discover the", "Age of Lunar Craters")
+
     st.markdown("""
         <p class="subtitle">
             Upload lunar surface imagery and let our AI classify craters as fresh,
@@ -198,95 +160,23 @@ def hero_section():
     """, unsafe_allow_html=True)
 
     # CTA Buttons
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        button_col1, button_col2 = st.columns(2)
+    _, col_center, _ = st.columns([1, 2, 1])
+    with col_center:
+        btn_col1, btn_col2 = st.columns(2)
 
-        with button_col1:
+        with btn_col1:
             if st.button("🚀 Start Classifying", use_container_width=True, type="primary"):
                 st.switch_page("pages/classify.py")
 
-        with button_col2:
+        with btn_col2:
             if st.button("📖 Learn More", use_container_width=True):
                 st.switch_page("pages/about.py")
 
-    # Stats section
-    st.markdown("""
-        <div class="stats-container">
-            <div class="stat-item">
-                <div class="stat-value">5,000+</div>
-                <div class="stat-label">Labeled Images</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-value">3</div>
-                <div class="stat-label">Classifications</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-value">227×277</div>
-                <div class="stat-label">Image Size</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
+    render_stats()
     st.markdown('</div>', unsafe_allow_html=True)
 
-def features_section():
-    """
-    Features section showcasing the key capabilities
-    """
-
-    features = [
-        {
-            "icon": "⚡",
-            "title": "Instant Classification",
-            "description": "Upload an image and receive classification results in seconds with our optimized AI model.",
-            "color": "yellow"
-        },
-        {
-            "icon": "🎯",
-            "title": "High Accuracy",
-            "description": "Trained on 5,000+ labeled lunar images from the Lunar Reconnaissance Orbiter.",
-            "color": "green"
-        },
-        {
-            "icon": "🕐",
-            "title": "Age Estimation",
-            "description": "Get estimated crater ages distinguishing between fresh and ancient impact sites.",
-            "color": "purple"
-        },
-    ]
-
-    # Header
-    st.markdown("""
-        <div class="features-header">
-            <h2 class="main-heading" style="font-size: 2.5rem;">
-                <span class="gradient-text">Powerful Features</span>
-            </h2>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Features Grid
-    col1, col2 = st.columns(2)
-
-    for idx, feature in enumerate(features):
-        col = col1 if idx % 2 == 0 else col2
-
-        with col:
-            st.markdown(f"""
-                <div class="feature-card">
-                    <div class="feature-icon feature-icon-{feature['color']}">
-                        {feature['icon']}
-                    </div>
-                    <h3 class="feature-title">{feature['title']}</h3>
-                    <p class="feature-description">{feature['description']}</p>
-                </div>
-            """, unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Main page logic
-if __name__ == "__main__":
+def main():
+    """Main application entry point"""
     st.set_page_config(
         page_title="LunarCrater Classifier",
         page_icon="🌙",
@@ -294,11 +184,13 @@ if __name__ == "__main__":
         initial_sidebar_state="collapsed"
     )
 
-    # Render hero section
-    hero_section()
+    # Store backend URL in session state
+    if 'backend_url' not in st.session_state:
+        st.session_state.backend_url = BACKEND_URL
 
-    # Add some spacing
+    load_styles()
+    hero_section()
     st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # Render features section
-    features_section()
+if __name__ == "__main__":
+    main()
