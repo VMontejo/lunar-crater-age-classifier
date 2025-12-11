@@ -34,6 +34,25 @@ def classify_page():
             margin: 1rem auto 0;
         }
 
+        /* Custom Primary Button Gradient */
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%) !important;
+            color: white !important;
+            border: none !important;
+            box-shadow: 0 10px 25px -5px rgba(168, 85, 247, 0.25);
+            transition: all 0.3s ease;
+        }
+
+        .stButton > button[kind="primary"]:hover {
+            background: linear-gradient(135deg, #9333ea 0%, #2563eb 100%) !important;
+            box-shadow: 0 20px 40px -5px rgba(168, 85, 247, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .stButton > button[kind="primary"]:active {
+            transform: translateY(0px);
+        }
+
         .info-card {
             background: rgba(255, 255, 255, 0.05);
             border-radius: 1rem;
@@ -234,8 +253,6 @@ def render_result_section():
 
     result = st.session_state.classification_result
     image = st.session_state.image_preview
-
-    st.markdown('<div class="result-container">', unsafe_allow_html=True)
 
     # Image and results side by side
     col1, col2 = st.columns([1, 1])
