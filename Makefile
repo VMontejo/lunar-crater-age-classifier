@@ -10,7 +10,7 @@ install:
 #     RUNNING FAST_API LOCALLY
 # ----------------------------------
 run-api:
-	uvicorn Fast_api.app:app --port 8000
+	uvicorn Fast_api.app:app --reload
 
 open-docs:
 	open http://127.0.0.1:8000/docs
@@ -32,7 +32,4 @@ api:
 # ----------------------------------
 # Run the Docker image locally
 docker-run:
-	docker run -it --rm \
-		-p 8000:8000 \
-		--env-file .env \
-		$(shell docker images "lunar-crater-*:dev" --format "{{.Repository}}:{{.Tag}}" | head -1)
+	run -it -e PORT=8000 -p 8000:8000 --env-file .env ghcr.io/vmontejo/lunar-crater-age-classifier/lunar-crater
