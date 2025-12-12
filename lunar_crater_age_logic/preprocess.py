@@ -4,22 +4,13 @@ Lunar Crater Age classification - Data Preprocessing Pipeline
 This module contains all functions needed to load, preprocess, and batch
 lunar crater images for training a CNN model
 
-<<<<<<< HEAD
-Use load_data and you will get:
-# 1. All images loaded
-# 2. Validated to 227x227
-# 3. Converted to RGB if needed
-# 4. Normalized (z-score)
-# 5. Batched efficiently
-# 6. Class imbalance handled (if requested)
-# 7. Shuffled for training
-# 8. Ready for CNN input
-=======
->>>>>>> master
 """
 import tensorflow as tf
+import numpy as np
+import random
 from pathlib import Path
 from typing import Tuple, Callable, List
+from PIL import Image, ImageEnhance
 
 
 #-------------------------------------------------------------------------------
@@ -33,8 +24,6 @@ CLASS_NAMES = ["ejecta", "oldcrater", "none"]
 NORM_MEAN = 0.3306  #Average moon brightness (dark grey)
 NORM_STD = 0.1618   #Standard deviation of moon brightness
 
-<<<<<<< HEAD
-=======
 MODEL_PREPROCESS = {
     'vgg16': tf.keras.applications.vgg16.preprocess_input,
     'resnet50': tf.keras.applications.resnet50.preprocess_input,
@@ -42,11 +31,140 @@ MODEL_PREPROCESS = {
 }
 
 SUPPORTED_MODELS = ['vgg16', 'resnet50', 'custom']
->>>>>>> master
 
 #-------------------------------------------------------------------------------
 # FUNCTIONS - single image processing
 #-------------------------------------------------------------------------------
+
+def load_and_preprocess_image(image_path: str, augment: bool = False) -> np.ndarray:
+    """
+    Load an image from disk, resize to target size, convert to RGB if needed,
+    and normalize using z-score normalization.
+
+    Args:
+        image_path (str): Path to the image file.
+        augment (bool): Whether to apply data augmentation.
+
+    Returns:
+        np.ndarray: Preprocessed image array.
+    """
+    # Load image
+    img = Image.open(image_path)
+
+    # Convert to RGB if not already
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+
+    # Data Augmentation (for training only)
+    if augment:
+        # Random rotation (0, 90, 180, 270 degrees - craters are rotationally invariant)
+        rotation = random.choice([0, 90, 180, 270])
+        img = img.rotate(rotation)
+
+        # Random horizontal flip
+        if random.random() > 0.5:
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+
+        # Random vertical flip
+        if random.random() > 0.5:
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+
+        # Random brightness
+        if random.random() > 0.5:
+            factor = random.uniform(0.8, 1.2)
+            img = Image.fromarray(np.clip(np.array(img) * factor, 0, 255).astype(np.uint8))
+
+        #random contrast
+        if random.random() > 0.5:
+            factor = random.uniform(0.8, 1.2)
+            enhancer = ImageEnhance.Contrast(img)
+            img = enhancer.enhance(factor)
+
+        # Random zoom (90% to 110%)
+        if random.random() > 0.5:
+            zoom_factor = random.uniform(0.9, 1.1)
+            new_w = max(int(IMAGE_SIZE[0] * zoom_factor), IMAGE_SIZE[0])
+            new_h = max(int(IMAGE_SIZE[1] * zoom_factor), IMAGE_SIZE[1])
+            new_size = (new_w, new_h)
+
+            # Resize image
+            img = img.resize(new_size)
+
+            # Center crop back to original size
+            left = (img.width - IMAGE_SIZE[0]) // 2
+            top = (img.height - IMAGE_SIZE[1]) // 2
+            right = left + IMAGE_SIZE[0]
+            bottom = top + IMAGE_SIZE[1]
+            img = img.crop((left, top, right, bottom))
+
+    ## Ensure final size is correct (only resize if needed)
+    if img.size != IMAGE_SIZE:
+        img = img.resize(IMAGE_SIZE)
+
+    # Convert to numpy array (keep as 0-255 for now)
+    img_array = np.array(img).astype(np.float32)
+
+    # Z-score normalization using dataset statistics
+    img_array = (img_array - DATASET_MEAN) / DATASET_STD
+
+    return img_array
+
+def augment_image_tf(image: tf.Tensor) -> tf.Tensor:
+    """
+    Apply TensorFlow-based augmentation to image.
+
+    Augmentations applied:
+    - Random rotation (0, 90, 180, 270 degrees)
+    - Random horizontal flip
+    - Random vertical flip
+    - Random brightness adjustment (0.8-1.2x)
+    - Random contrast adjustment (0.8-1.2x)
+    - Random zoom (90-110%)
+
+    Args:
+        image: TensorFlow image tensor (227, 227, 3), uint8
+
+    Returns:
+        Augmented image tensor (227, 227, 3), uint8
+    """
+    # Convert to float for augmentation
+    image = tf.cast(image, tf.float32)
+
+    # Random rotation (0, 90, 180, 270 degrees)
+    k = tf.random.uniform([], 0, 4, dtype=tf.int32)
+    image = tf.image.rot90(image, k=k)
+
+    # Random horizontal flip
+    image = tf.image.random_flip_left_right(image)
+
+    # Random vertical flip
+    image = tf.image.random_flip_up_down(image)
+
+    # Random brightness (0.8-1.2x)
+    image = tf.image.random_brightness(image, max_delta=0.2 * 255)
+
+    # Random contrast (0.8-1.2x)
+    image = tf.image.random_contrast(image, lower=0.8, upper=1.2)
+
+    # Clip values to valid range
+    image = tf.clip_by_value(image, 0, 255)
+
+    # Random zoom (90-110%) with center crop
+    if tf.random.uniform([]) > 0.5:
+        zoom_factor = tf.random.uniform([], 0.9, 1.1)
+        new_size = tf.cast(tf.cast(IMAGE_SIZE, tf.float32) * zoom_factor, tf.int32)
+        new_size = tf.maximum(new_size, IMAGE_SIZE)  # Ensure at least IMAGE_SIZE
+
+        # Resize to larger size
+        image = tf.image.resize(image, new_size)
+
+        # Center crop back to original size
+        image = tf.image.resize_with_crop_or_pad(image, IMAGE_SIZE[0], IMAGE_SIZE[1])
+
+    # Convert back to uint8
+    image = tf.cast(image, tf.uint8)
+
+    return image
 
 def load_and_validate_image_tf(file_path: tf.Tensor) -> tf.Tensor:
     """
@@ -69,22 +187,6 @@ def load_and_validate_image_tf(file_path: tf.Tensor) -> tf.Tensor:
     return image
 
 
-<<<<<<< HEAD
-
-def normalize_image(image_array: np.ndarray) -> np.ndarray:
-    """
-    Applies z-score normalization to lunar crater images
-    Converts [0, 255] range -> normalized range ~[-2, +2]
-    Centers data around 0 (mean = 0, std = 1)
-    Helps model to focus on crater features, not brightness
-
-    Formula:
-        1. Scale: img_float = img_array / 255.0
-        2. Normalize: img_normalized = (img_float - 0.3306) / 0.1618
-
-    Args:
-        img_array: NumPy array from load_and_validate_image()
-=======
 def normalize_image_tf(
     image: tf.Tensor,
     normalization: str = 'simple',
@@ -97,21 +199,10 @@ def normalize_image_tf(
         image: TensorFlow image tensor (227, 227, 3), uint8
         normalization: 'simple', 'zscore', or 'model'
         model_type: 'vgg16', 'resnet50', or 'custom'
->>>>>>> master
 
     Returns:
         Normalized float32 tensor
     """
-<<<<<<< HEAD
-
-    #Convert to float32 and scale to [0, 1]
-    img_float = image_array.astype(np.float32) / 255.0
-
-     #Z-score normalization using our calculated statistics
-    return (img_float - NORM_MEAN) / NORM_STD
-
-def preprocess_single_image(image_path: Path) -> np.ndarray:
-=======
     # Convert to float32
     image = tf.cast(image, tf.float32)
 
@@ -135,21 +226,18 @@ def preprocess_single_image_tf(
     file_path: tf.Tensor,
     label: tf.Tensor,
     normalization: str = 'simple',
-    model_type: str = 'custom'
+    model_type: str = 'custom',
+    augment: bool = False
 ) -> Tuple[tf.Tensor, tf.Tensor]:
->>>>>>> master
     """
     Complete preprocessing pipeline for one image.
 
     Args:
-<<<<<<< HEAD
-        image_path: Path to .jpg file
-=======
         file_path: Tensor with file path
         label: Integer class label
         normalization: 'simple', 'zscore', or 'model'
         model_type: 'vgg16', 'resnet50', or 'custom'
->>>>>>> master
+        augment: Whether to apply augmentation
 
     Returns:
         (image_tensor, label_tensor)
@@ -157,58 +245,20 @@ def preprocess_single_image_tf(
     # 1. Load image
     image = load_and_validate_image_tf(file_path)
 
-    # 2. Normalize
+    # 2. Apply augmentation (if enabled)
+    if augment:
+        image = augment_image_tf(image)
+
+    # 3. Normalize
     image = normalize_image_tf(image, normalization, model_type)
 
-<<<<<<< HEAD
-    #Step 2: Normalize
-    process_image = normalize_image(raw_image)
-=======
     return image, label
->>>>>>> master
 
 # ------------------------------------------------------------------------------
 # BALANCING FUNCTIONS
 # ------------------------------------------------------------------------------
 
-<<<<<<< HEAD
-#-------------------------------------------------------------------------------
-# FUNCTIONS - batch processing
-#-------------------------------------------------------------------------------
-
-def preprocess_batch(
-    image_paths: List[Path],
-    output_dtype: type = np.float32
-)->np.ndarray:
-    """
-    Process multiple images efectively in batch
-
-    Args:
-        image_paths:List of paths to .jpg files
-        output_dtype: Output data type (default: float32)
-
-    Returns:
-        Batch array shape: (batch_size, 227, 227 3)
-        batch_size = len(image_paths)
-    """
-    batch_size = len(image_paths)
-    batch_array = np.zeros((batch_size, 227, 227, 3), dtype=output_dtype)
-
-    for i, img_path in enumerate(image_paths):
-        #Use our single_image function
-        processed = preprocess_single_image(img_path)
-        batch_array[i] = processed
-
-    return batch_array
-
-#-------------------------------------------------------------------------------
-# FUNCTIONS - Dataset Management
-#-------------------------------------------------------------------------------
-
-def create_balanced_subset(
-=======
 def create_balanced_subset_tf(
->>>>>>> master
     data_dir: Path,
     subset: str = 'train',
     samples_per_class: int = 358,
@@ -322,63 +372,18 @@ def create_weighted_sampler_tf(
 # DATASET CREATION FUNCTIONS
 # ------------------------------------------------------------------------------
 
-<<<<<<< HEAD
-#-------------------------------------------------------------------------------
-# FUNCTIONS - Load Data
-#-------------------------------------------------------------------------------
-def create_array_dataloader(
-    samples,
-=======
 def create_tf_dataset(
     data_dir: Path,
     subset: str = 'train',
     model_type: str = 'custom',
     normalization: str = 'simple',
->>>>>>> master
     batch_size: int = 32,
     shuffle: bool = False,
     seed: int = 42,
-<<<<<<< HEAD
-    use_zscore: bool = False,
-    augment: bool = False
-) -> Generator[Tuple[np.ndarray, np.ndarray], None, None]:
-
-    rng = random.Random(seed)
-
-    # Shuffle once at start
-    if shuffle:
-        rng.shuffle(samples)
-
-    # Infinite generator
-    while True:
-        batch_paths = []
-        batch_labels = []
-
-        for img_path, label in samples:
-            batch_paths.append(img_path)
-            batch_labels.append(label)
-
-            if len(batch_paths) == batch_size:
-                images = preprocess_batch(
-                    batch_paths,
-                    use_zscore=use_zscore,
-                    augment=augment    # <-- IMPORTANT
-                )
-
-                labels = np.array(batch_labels, dtype=np.int32)
-
-                yield images, labels
-
-                batch_paths = []
-                batch_labels = []
-
-        # reshuffle for next epoch
-        if shuffle:
-            rng.shuffle(samples)
-=======
     balanced: bool = False,
     weighted_sampling: bool = False,
-    samples_per_class: int = 358
+    samples_per_class: int = 358,
+    augment: bool = False
 ) -> Tuple[tf.data.Dataset, int]:
     """
     Create a FAST TensorFlow dataset pipeline.
@@ -391,6 +396,7 @@ def create_tf_dataset(
         batch_size: Images per batch
         shuffle: Whether to shuffle data
         seed: Random seed
+        augment: Whether to apply augmentation
 
     Returns:
         (dataset, num_samples) - tf.data.Dataset ready for model.fit()
@@ -430,9 +436,9 @@ def create_tf_dataset(
         shuffle_buffer = min(len(file_paths), 2000)
         dataset = dataset.shuffle(shuffle_buffer, seed=seed)
 
-    # Map preprocessing
+    # Map preprocessing with augmentation support
     dataset = dataset.map(
-        lambda fp, lbl: preprocess_single_image_tf(fp, lbl, normalization, model_type),
+        lambda fp, lbl: preprocess_single_image_tf(fp, lbl, normalization, model_type, augment),
         num_parallel_calls=tf.data.AUTOTUNE
     )
 
@@ -443,7 +449,6 @@ def create_tf_dataset(
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
     return dataset, len(file_paths)
->>>>>>> master
 
 def load_data(
     data_dir: Path,
@@ -453,6 +458,7 @@ def load_data(
     seed: int = 42,
     train_balanced: bool = False,
     train_weighted_sampling: bool = False,
+    augment_train: bool = True,
     samples_per_class: int = 358
 ) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset, int, int, int]:
     """
@@ -461,24 +467,16 @@ def load_data(
     Returns datasets ready for model.fit() directly.
 
     Args:
-<<<<<<< HEAD
-        data_dir: Path to data folder
-        balanced: True for balanced subset (prototype), false for all data (Final training)
-        use_weighted_sampling: Apply weighted sampling for imbalance data (only works when balanced = false)
-        batch_size: Number of images per batch
-        samples_per_class: For balanced mode only
-        seed: Random seed for reproducibility
-=======
         data_dir: Base directory containing train/val/test folders
         model_type: 'vgg16', 'resnet50', or 'custom'
         normalization: 'simple', 'zscore', or 'model'
         batch_size: Images per batch
         seed: Random seed
-        train_balance: if True returns a balance dataset
+        train_balanced: if True returns a balance dataset
         train_weighted_sampling: If True, balance training data by oversampling minority classes
+        augment_train: If True, apply TensorFlow-based augmentation to training data
         samples_per_class: When train_balance = True, the number of samples per class = 358
 
->>>>>>> master
 
     Returns:
         (train_dataset, val_dataset, test_dataset, train_count, val_count, test_count) ->tf.data.Dataset object
@@ -486,64 +484,17 @@ def load_data(
 
     """
 
-<<<<<<< HEAD
-    if balanced:
-        print(f"Creating BALANCED dataset ({samples_per_class} per class)")
-        samples = create_balanced_subset(data_dir, samples_per_class, seed)
-
-        loader = create_array_dataloader(
-            samples,
-            batch_size=batch_size,
-            shuffle=True,
-            seed=seed,
-            use_zscore=use_zscore,
-            augment=False                      # NEVER augment balanced validation set
-        )
-
-    else:
-        print("Creating FULL dataset (all available data)")
-        samples = []
-
-        for class_idx, class_name in enumerate(CLASS_NAMES):
-            class_path = data_dir / class_name
-            all_files = list(class_path.glob("*.jpg"))
-            samples.extend([(img_path, class_idx) for img_path in all_files])
-            print(f"{class_name}: {len(all_files)} images")
-
-        if use_weighted_sampling:
-            print("Applying weighted sampling")
-            resampled_samples = create_weighted_sampler(samples, seed=seed)
-
-            loader = create_array_dataloader(
-                resampled_samples,
-                batch_size=batch_size,
-                shuffle=True,
-                seed=seed,
-                use_zscore=use_zscore,
-                augment=True                     # TRAINING LOADER → AUGMENT ENABLED
-            )
-
-        else:
-            loader = create_array_dataloader(
-                samples,
-                batch_size=batch_size,
-                shuffle=False,
-                seed=seed,
-                use_zscore=use_zscore,
-                augment=False                    # VALIDATION LOADER → NO AUGMENT
-            )
-
-    return loader
-=======
     print(f"Loading data for {model_type.upper()}")
     print(f"Normalization: {normalization}")
     print(f"Batch size: {batch_size}")
+    if augment_train:
+        print(f"Training: TensorFlow augmentation ENABLED (rotation, flip, brightness, contrast, zoom)")
     if train_balanced:
         print(f"Training: BALANCED ({samples_per_class} per class)")
     elif train_weighted_sampling:
         print(f"Training: WEIGHTED sampling")
 
-    # Load train dataset (with optional balancing)
+    # Load train dataset (with optional balancing and augmentation)
     train_dataset, train_count = create_tf_dataset(
         data_dir=data_dir,
         subset='train',
@@ -554,10 +505,11 @@ def load_data(
         seed=seed,
         balanced=train_balanced,
         weighted_sampling=train_weighted_sampling,
-        samples_per_class=samples_per_class
+        samples_per_class=samples_per_class,
+        augment=augment_train
     )
 
-    # Load validation dataset (always full, no balancing)
+    # Load validation dataset (always full, no balancing, no augmentation)
     val_dataset, val_count = create_tf_dataset(
         data_dir=data_dir,
         subset='val',
@@ -565,10 +517,11 @@ def load_data(
         normalization=normalization,
         batch_size=batch_size,
         shuffle=False,
-        seed=seed
+        seed=seed,
+        augment=False
     )
 
-    # Load test dataset (always full, no balancing)
+    # Load test dataset (always full, no balancing, no augmentation)
     test_dataset, test_count = create_tf_dataset(
         data_dir=data_dir,
         subset='test',
@@ -576,7 +529,8 @@ def load_data(
         normalization=normalization,
         batch_size=batch_size,
         shuffle=False,
-        seed=seed
+        seed=seed,
+        augment=False
     )
 
     print(f"\nData loaded:")
@@ -585,4 +539,3 @@ def load_data(
     print(f"Test: {test_count} images ({test_count // batch_size} batches)")
 
     return train_dataset, val_dataset, test_dataset, train_count, val_count, test_count
->>>>>>> master
