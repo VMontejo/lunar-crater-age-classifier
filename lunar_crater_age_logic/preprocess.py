@@ -6,8 +6,11 @@ lunar crater images for training a CNN model
 
 """
 import tensorflow as tf
+import numpy as np
+import random
 from pathlib import Path
 from typing import Tuple, Callable, List
+from PIL import Image, ImageEnhance
 
 
 #-------------------------------------------------------------------------------
@@ -32,6 +35,136 @@ SUPPORTED_MODELS = ['vgg16', 'resnet50', 'custom']
 #-------------------------------------------------------------------------------
 # FUNCTIONS - single image processing
 #-------------------------------------------------------------------------------
+
+def load_and_preprocess_image(image_path: str, augment: bool = False) -> np.ndarray:
+    """
+    Load an image from disk, resize to target size, convert to RGB if needed,
+    and normalize using z-score normalization.
+
+    Args:
+        image_path (str): Path to the image file.
+        augment (bool): Whether to apply data augmentation.
+
+    Returns:
+        np.ndarray: Preprocessed image array.
+    """
+    # Load image
+    img = Image.open(image_path)
+
+    # Convert to RGB if not already
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+
+    # Data Augmentation (for training only)
+    if augment:
+        # Random rotation (0, 90, 180, 270 degrees - craters are rotationally invariant)
+        rotation = random.choice([0, 90, 180, 270])
+        img = img.rotate(rotation)
+
+        # Random horizontal flip
+        if random.random() > 0.5:
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+
+        # Random vertical flip
+        if random.random() > 0.5:
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+
+        # Random brightness
+        if random.random() > 0.5:
+            factor = random.uniform(0.8, 1.2)
+            img = Image.fromarray(np.clip(np.array(img) * factor, 0, 255).astype(np.uint8))
+
+        #random contrast
+        if random.random() > 0.5:
+            factor = random.uniform(0.8, 1.2)
+            enhancer = ImageEnhance.Contrast(img)
+            img = enhancer.enhance(factor)
+
+        # Random zoom (90% to 110%)
+        if random.random() > 0.5:
+            zoom_factor = random.uniform(0.9, 1.1)
+            new_w = max(int(IMAGE_SIZE[0] * zoom_factor), IMAGE_SIZE[0])
+            new_h = max(int(IMAGE_SIZE[1] * zoom_factor), IMAGE_SIZE[1])
+            new_size = (new_w, new_h)
+
+            # Resize image
+            img = img.resize(new_size)
+
+            # Center crop back to original size
+            left = (img.width - IMAGE_SIZE[0]) // 2
+            top = (img.height - IMAGE_SIZE[1]) // 2
+            right = left + IMAGE_SIZE[0]
+            bottom = top + IMAGE_SIZE[1]
+            img = img.crop((left, top, right, bottom))
+
+    ## Ensure final size is correct (only resize if needed)
+    if img.size != IMAGE_SIZE:
+        img = img.resize(IMAGE_SIZE)
+
+    # Convert to numpy array (keep as 0-255 for now)
+    img_array = np.array(img).astype(np.float32)
+
+    # Z-score normalization using dataset statistics
+    img_array = (img_array - DATASET_MEAN) / DATASET_STD
+
+    return img_array
+
+def augment_image_tf(image: tf.Tensor) -> tf.Tensor:
+    """
+    Apply TensorFlow-based augmentation to image.
+
+    Augmentations applied:
+    - Random rotation (0, 90, 180, 270 degrees)
+    - Random horizontal flip
+    - Random vertical flip
+    - Random brightness adjustment (0.8-1.2x)
+    - Random contrast adjustment (0.8-1.2x)
+    - Random zoom (90-110%)
+
+    Args:
+        image: TensorFlow image tensor (227, 227, 3), uint8
+
+    Returns:
+        Augmented image tensor (227, 227, 3), uint8
+    """
+    # Convert to float for augmentation
+    image = tf.cast(image, tf.float32)
+
+    # Random rotation (0, 90, 180, 270 degrees)
+    k = tf.random.uniform([], 0, 4, dtype=tf.int32)
+    image = tf.image.rot90(image, k=k)
+
+    # Random horizontal flip
+    image = tf.image.random_flip_left_right(image)
+
+    # Random vertical flip
+    image = tf.image.random_flip_up_down(image)
+
+    # Random brightness (0.8-1.2x)
+    image = tf.image.random_brightness(image, max_delta=0.2 * 255)
+
+    # Random contrast (0.8-1.2x)
+    image = tf.image.random_contrast(image, lower=0.8, upper=1.2)
+
+    # Clip values to valid range
+    image = tf.clip_by_value(image, 0, 255)
+
+    # Random zoom (90-110%) with center crop
+    if tf.random.uniform([]) > 0.5:
+        zoom_factor = tf.random.uniform([], 0.9, 1.1)
+        new_size = tf.cast(tf.cast(IMAGE_SIZE, tf.float32) * zoom_factor, tf.int32)
+        new_size = tf.maximum(new_size, IMAGE_SIZE)  # Ensure at least IMAGE_SIZE
+
+        # Resize to larger size
+        image = tf.image.resize(image, new_size)
+
+        # Center crop back to original size
+        image = tf.image.resize_with_crop_or_pad(image, IMAGE_SIZE[0], IMAGE_SIZE[1])
+
+    # Convert back to uint8
+    image = tf.cast(image, tf.uint8)
+
+    return image
 
 def load_and_validate_image_tf(file_path: tf.Tensor) -> tf.Tensor:
     """
@@ -93,7 +226,8 @@ def preprocess_single_image_tf(
     file_path: tf.Tensor,
     label: tf.Tensor,
     normalization: str = 'simple',
-    model_type: str = 'custom'
+    model_type: str = 'custom',
+    augment: bool = False
 ) -> Tuple[tf.Tensor, tf.Tensor]:
     """
     Complete preprocessing pipeline for one image.
@@ -103,6 +237,7 @@ def preprocess_single_image_tf(
         label: Integer class label
         normalization: 'simple', 'zscore', or 'model'
         model_type: 'vgg16', 'resnet50', or 'custom'
+        augment: Whether to apply augmentation
 
     Returns:
         (image_tensor, label_tensor)
@@ -110,7 +245,11 @@ def preprocess_single_image_tf(
     # 1. Load image
     image = load_and_validate_image_tf(file_path)
 
-    # 2. Normalize
+    # 2. Apply augmentation (if enabled)
+    if augment:
+        image = augment_image_tf(image)
+
+    # 3. Normalize
     image = normalize_image_tf(image, normalization, model_type)
 
     return image, label
@@ -243,7 +382,8 @@ def create_tf_dataset(
     seed: int = 42,
     balanced: bool = False,
     weighted_sampling: bool = False,
-    samples_per_class: int = 358
+    samples_per_class: int = 358,
+    augment: bool = False
 ) -> Tuple[tf.data.Dataset, int]:
     """
     Create a FAST TensorFlow dataset pipeline.
@@ -256,6 +396,7 @@ def create_tf_dataset(
         batch_size: Images per batch
         shuffle: Whether to shuffle data
         seed: Random seed
+        augment: Whether to apply augmentation
 
     Returns:
         (dataset, num_samples) - tf.data.Dataset ready for model.fit()
@@ -295,9 +436,9 @@ def create_tf_dataset(
         shuffle_buffer = min(len(file_paths), 2000)
         dataset = dataset.shuffle(shuffle_buffer, seed=seed)
 
-    # Map preprocessing
+    # Map preprocessing with augmentation support
     dataset = dataset.map(
-        lambda fp, lbl: preprocess_single_image_tf(fp, lbl, normalization, model_type),
+        lambda fp, lbl: preprocess_single_image_tf(fp, lbl, normalization, model_type, augment),
         num_parallel_calls=tf.data.AUTOTUNE
     )
 
@@ -317,6 +458,7 @@ def load_data(
     seed: int = 42,
     train_balanced: bool = False,
     train_weighted_sampling: bool = False,
+    augment_train: bool = True,
     samples_per_class: int = 358
 ) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset, int, int, int]:
     """
@@ -330,8 +472,9 @@ def load_data(
         normalization: 'simple', 'zscore', or 'model'
         batch_size: Images per batch
         seed: Random seed
-        train_balance: if True returns a balance dataset
+        train_balanced: if True returns a balance dataset
         train_weighted_sampling: If True, balance training data by oversampling minority classes
+        augment_train: If True, apply TensorFlow-based augmentation to training data
         samples_per_class: When train_balance = True, the number of samples per class = 358
 
 
@@ -344,12 +487,14 @@ def load_data(
     print(f"Loading data for {model_type.upper()}")
     print(f"Normalization: {normalization}")
     print(f"Batch size: {batch_size}")
+    if augment_train:
+        print(f"Training: TensorFlow augmentation ENABLED (rotation, flip, brightness, contrast, zoom)")
     if train_balanced:
         print(f"Training: BALANCED ({samples_per_class} per class)")
     elif train_weighted_sampling:
         print(f"Training: WEIGHTED sampling")
 
-    # Load train dataset (with optional balancing)
+    # Load train dataset (with optional balancing and augmentation)
     train_dataset, train_count = create_tf_dataset(
         data_dir=data_dir,
         subset='train',
@@ -360,10 +505,11 @@ def load_data(
         seed=seed,
         balanced=train_balanced,
         weighted_sampling=train_weighted_sampling,
-        samples_per_class=samples_per_class
+        samples_per_class=samples_per_class,
+        augment=augment_train
     )
 
-    # Load validation dataset (always full, no balancing)
+    # Load validation dataset (always full, no balancing, no augmentation)
     val_dataset, val_count = create_tf_dataset(
         data_dir=data_dir,
         subset='val',
@@ -371,10 +517,11 @@ def load_data(
         normalization=normalization,
         batch_size=batch_size,
         shuffle=False,
-        seed=seed
+        seed=seed,
+        augment=False
     )
 
-    # Load test dataset (always full, no balancing)
+    # Load test dataset (always full, no balancing, no augmentation)
     test_dataset, test_count = create_tf_dataset(
         data_dir=data_dir,
         subset='test',
@@ -382,7 +529,8 @@ def load_data(
         normalization=normalization,
         batch_size=batch_size,
         shuffle=False,
-        seed=seed
+        seed=seed,
+        augment=False
     )
 
     print(f"\nData loaded:")
