@@ -23,12 +23,12 @@ NORM_STD = 0.1618   #Standard deviation of moon brightness
 
 MODEL_PREPROCESS = {
     'vgg16': tf.keras.applications.vgg16.preprocess_input,
+    'vgg11': tf.keras.applications.vgg11.preprocess_input,
     'resnet50': tf.keras.applications.resnet50.preprocess_input,
     'custom': None  # No special preprocessing
 }
 
-SUPPORTED_MODELS = ['vgg16', 'resnet50', 'custom']
-
+SUPPORTED_MODELS = ['vgg16', 'vgg11', 'resnet50', 'custom']
 #-------------------------------------------------------------------------------
 # FUNCTIONS - single image processing
 #-------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def normalize_image_tf(
     Args:
         image: TensorFlow image tensor (227, 227, 3), uint8
         normalization: 'simple', 'zscore', or 'model'
-        model_type: 'vgg16', 'resnet50', or 'custom'
+        model_type: 'vgg11', 'vgg16', 'resnet50', or 'custom'
 
     Returns:
         Normalized float32 tensor
@@ -102,7 +102,7 @@ def preprocess_single_image_tf(
         file_path: Tensor with file path
         label: Integer class label
         normalization: 'simple', 'zscore', or 'model'
-        model_type: 'vgg16', 'resnet50', or 'custom'
+        model_type: 'vgg11', 'vgg16', 'resnet50', or 'custom'
 
     Returns:
         (image_tensor, label_tensor)
@@ -251,7 +251,7 @@ def create_tf_dataset(
     Args:
         data_dir: Base directory containing train/val/test folders
         subset: 'train', 'val', or 'test'
-        model_type: 'vgg16', 'resnet50', or 'custom'
+        model_type: 'vgg11', vgg16', 'resnet50', or 'custom'
         normalization: 'simple' (/255), 'zscore', or 'model'
         batch_size: Images per batch
         shuffle: Whether to shuffle data
@@ -320,13 +320,13 @@ def load_data(
     samples_per_class: int = 358
 ) -> Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset, int, int, int]:
     """
-    MAIN FUNCTION - Load data for VGG16, ResNet50, or Custom CNN.
+    MAIN FUNCTION - Load data for VGG11, VGG16, ResNet50, or Custom CNN.
 
     Returns datasets ready for model.fit() directly.
 
     Args:
         data_dir: Base directory containing train/val/test folders
-        model_type: 'vgg16', 'resnet50', or 'custom'
+        model_type: 'vgg11', vgg16', 'resnet50', or 'custom'
         normalization: 'simple', 'zscore', or 'model'
         batch_size: Images per batch
         seed: Random seed
