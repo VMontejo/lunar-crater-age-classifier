@@ -63,7 +63,7 @@ def get_health():
         "message": f"Service operational. Model status: {model_status}",
     }
 
-@app.post("/predict", response_model=PredictionResponse)
+@app.post("/predict", response_model=PredictionResponse, operation_id="predict")
 async def predict_crater_age(file: UploadFile = File(...)):
     """
     Accepts an image file and returns the predicted crater age class.
