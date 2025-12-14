@@ -3,12 +3,9 @@ from pathlib import Path
 from utils.layout import init_layout, render_footer
 from utils.navigation import render_sidebar_navigation
 
-# Backend Configuration
-BACKEND_URL = st.secrets.get("BACKEND_URL", "http://localhost:8000")
-
 # Initialize session state
 if 'backend_url' not in st.session_state:
-    st.session_state.backend_url = BACKEND_URL
+    st.session_state.backend_url = st.secrets['BACKEND_URL']
 
 # Initialize layout
 init_layout(page_title="Home", page_icon="🌙")
