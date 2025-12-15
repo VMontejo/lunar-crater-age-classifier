@@ -20,7 +20,7 @@ init_layout(page_title="Classify - LunarCrater", page_icon="🔬")
 render_sidebar_navigation()
 
 # Backend Configuration
-BACKEND_URL = st.session_state.get('backend_url', 'http://localhost:8000')
+BACKEND_URL = st.secrets["BACKEND_URL"]
 
 # CSS Styles
 STYLES = """
