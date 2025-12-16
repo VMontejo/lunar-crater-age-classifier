@@ -168,6 +168,42 @@ def preprocess_single_image_tf(
 
     return image, label
 
+def preprocess_image(
+    image: tf.Tensor,
+    model_type: str = "custom",
+    normalization: str = "zscore"
+) -> tf.Tensor:
+    """
+    Preprocess a single image for model prediction (API use).
+
+    Args:
+        image: RGB image tensor (H, W, 3), uint8 or float32
+        model_type: 'custom', 'vgg16', 'resnet50'
+        normalization: 'simple', 'zscore', or 'model'
+
+    Returns:
+        Preprocessed image tensor with shape (1, 227, 227, 3)
+    """
+
+    # Ensure uint8
+    if image.dtype != tf.uint8:
+        image = tf.cast(image, tf.uint8)
+
+    # Resize
+    image = tf.image.resize(image, IMAGE_SIZE)
+
+    # Normalize (reuses your existing logic)
+    image = normalize_image_tf(
+        image=image,
+        normalization=normalization,
+        model_type=model_type
+    )
+
+    # Add batch dimension
+    image = tf.expand_dims(image, axis=0)
+
+    return image
+
 # ------------------------------------------------------------------------------
 # BALANCING FUNCTIONS
 # ------------------------------------------------------------------------------
