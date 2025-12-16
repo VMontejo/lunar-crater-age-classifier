@@ -89,7 +89,7 @@ async def startup_event():
         model = tf.keras.models.load_model(model_full_path, compile=False)
         print(f"✅ Successfully loaded model from: {model_full_path}")
 
-        # --- TEMPORARY DEBUGGING BLOCK ---
+        # --- TEMPORARY DEBUGGING BLOCK TO GET CONV LAYER NAME ---
         print("\n--- Model Layers for Grad-CAM ---")
         # Print all layer names in the model
         for layer in model.layers:
@@ -97,7 +97,7 @@ async def startup_event():
             if 'conv' in layer.name or 'pool' in layer.name:
                 print(f"Layer Name: {layer.name}, Type: {type(layer).__name__}")
         print("---------------------------------")
-        # --- END TEMPORARY DEBUGGING BLOCK ---
+        # --- END TEMPORARY DEBUGGING BLOCK TO GET CONV LAYER NAME---
 
     except Exception as e:
         # If the model fails to load, the API should not start.
@@ -127,13 +127,8 @@ async def predict_crater_age(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(contents))
 
         # 2. Convert PIL → TensorFlow tensor (uint8)
-        image = image.convert("RGB")
-        image = image.resize(TARGET_SIZE)
         image_np = np.array(image, dtype=np.uint8)
         image_tf = tf.convert_to_tensor(image_np)
-
-        # [DEBUG PRINT]
-        # print(f"DEBUG: Image Tensor Shape (H,W,C): {image_tf.shape}")
 
         # 3. Apply Preprocessing function (Z-score normalization)
         preprocessed_image = preprocess_image(image_tf,
@@ -144,9 +139,6 @@ async def predict_crater_age(file: UploadFile = File(...)):
         # 3.5. Ensure the tensor is float32, which is required by model.predict and Grad-CAM
         if preprocessed_image.dtype != tf.float32:
             preprocessed_image = tf.cast(preprocessed_image, tf.float32)
-
-        # [DEBUG PRINT]
-        # print(f"DEBUG: Preprocessed Image Shape (1,H,W,C): {preprocessed_image.shape}")
 
         # 4. Make Prediction and index for Grad-CAM
         predictions = model.predict(preprocessed_image)
