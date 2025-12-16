@@ -3,8 +3,6 @@
 # ----------------------------------
 install:
 	@pip install -r requirements.txt
-
-install:
 	@pip install . -U
 
 clean:
