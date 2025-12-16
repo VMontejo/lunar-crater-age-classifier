@@ -5,11 +5,11 @@ import io
 import numpy as np
 import tensorflow as tf
 from PIL import Image
-from keras.applications.vgg16 import preprocess_input as vgg16_preprocess_input
+from lunar_crater_age_logic.preprocess import preprocess_single_image_tf as preprocess_image
 
 # --- 1. Constants and Global Variables ---
 # NOTE: Adjust this path when not local
-MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),"models/grace_best_model.keras")
+MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),"models/santanu_best_model.keras")
 TARGET_SIZE = (227, 227)
 CLASS_NAMES = ["New Crater (0)", "Old Crater (1)", "No Crater (2)"]
 global model
@@ -29,7 +29,7 @@ class PredictionResponse(BaseModel):
 # --- 3. FastAPI Application Definition ---
 app = FastAPI(
     title="Lunar Crater Age Classifier API",
-    version="0.0.1",
+    version="0.0.2",
     description="API for classifying lunar image chipouts."
 )
 
@@ -76,16 +76,16 @@ async def predict_crater_age(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
 
-        # 2. Convert to NumPy array and resize/expand dimensions
-        # VGG16 expects (Height, Width, Channels), but the prediction model expects
-        # a batch: (1, Height, Width, Channels)
+        # 2. Convert PIL → TensorFlow tensor (uint8)
         image = image.resize(TARGET_SIZE)
-        image_array = np.asarray(image).astype(np.float32)
-        image_expanded = np.expand_dims(image_array, axis=0)
+        image_np = np.array(image, dtype=np.uint8)
+        image_tf = tf.convert_to_tensor(image_np)
 
-        # 3. Apply VGG16 Preprocessing
-        # Note: We have to ensure the input is 0-255 before calling this
-        preprocessed_image = vgg16_preprocess_input(image_expanded)
+        # 3. Apply Preprocessing function (Z-score normalization)
+        preprocessed_image = preprocess_image(image_tf,
+                                              model_type="custom",
+                                              normalization="zscore"
+                                              )
 
         # 4. Make Prediction
         predictions = model.predict(preprocessed_image)
