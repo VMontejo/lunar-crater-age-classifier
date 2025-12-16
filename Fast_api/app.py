@@ -5,7 +5,7 @@ import io
 import numpy as np
 import tensorflow as tf
 from PIL import Image
-from lunar_crater_age_logic.preprocess import preprocess_single_image_tf as preprocess_image
+from lunar_crater_age_logic.preprocess import preprocess_image
 
 # --- 1. Constants and Global Variables ---
 # NOTE: Adjust this path when not local
@@ -77,7 +77,6 @@ async def predict_crater_age(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(contents))
 
         # 2. Convert PIL → TensorFlow tensor (uint8)
-        image = image.resize(TARGET_SIZE)
         image_np = np.array(image, dtype=np.uint8)
         image_tf = tf.convert_to_tensor(image_np)
 
