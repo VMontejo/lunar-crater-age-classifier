@@ -80,4 +80,6 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_name, pred_index=None
     else:
         # Handle edge case where heatmap is empty/zero
         heatmap = np.zeros(heatmap.shape)
-    return heatmap.numpy()
+
+    heatmap_2d = tf.squeeze(heatmap)
+    return heatmap_2d.numpy()
