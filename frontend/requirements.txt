@@ -1,7 +1,0 @@
-# Web
-streamlit
-requests
-python-dotenv
-
-# Image
-pillow
