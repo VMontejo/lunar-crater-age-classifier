@@ -6,13 +6,51 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 from lunar_crater_age_logic.preprocess import preprocess_image
+from lunar_crater_age_logic.grad_cam import make_gradcam_heatmap
+import base64
 
 # --- 1. Constants and Global Variables ---
 # NOTE: Adjust this path when not local
 MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),"models/santanu_best_model.keras")
 TARGET_SIZE = (227, 227)
 CLASS_NAMES = ["New Crater (0)", "Old Crater (1)", "No Crater (2)"]
+LAST_CONV_LAYER = "conv2d_9"
 global model
+
+# Helper function to encode image to base64
+def encode_image_to_base64(image_data: np.ndarray) -> str:
+    """
+    Converts a raw heatmap (float or uint8) array into a Base64-encoded PNG string.
+    Ensures the array is properly formatted (uint8, 3-channel) for PIL.
+    """
+    heatmap_array = image_data.copy()
+    # 1. Ensure array is normalized floats (0.0 to 1.0)
+    # Handle both common cases: uint8 (0-255) or float32 (0.0-1.0)
+    if heatmap_array.dtype != np.float32 and heatmap_array.dtype != np.float64:
+        heatmap_array = heatmap_array.astype(np.float32) / 255.0
+
+    # 2. Handle shape: Ensure it is a 3-channel array (H, W, 3)
+    # Grad-CAM often returns (H, W, 1) or just (H, W)
+    if heatmap_array.ndim == 2:
+        # Convert (H, W) to (H, W, 3) by stacking the grayscale channel
+        heatmap_array = np.stack([heatmap_array] * 3, axis=-1)
+    elif heatmap_array.shape[-1] == 1:
+        # Convert (H, W, 1) to (H, W, 3)
+        heatmap_array = np.concatenate([heatmap_array] * 3, axis=-1)
+
+    # 3. Convert to uint8 (0-255) for PIL
+    # Clip to 0-1 range just in case of overshoots from calculations
+    heatmap_array = np.clip(heatmap_array, 0.0, 1.0)
+    img_data_uint8 = (heatmap_array * 255).astype(np.uint8)
+
+    # 4. Convert to PIL Image
+    img = Image.fromarray(img_data_uint8, mode='RGB')
+
+    # 5. Save image to buffer and encode
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 # --- 2. Define Request/Response Schemas (Pydantic) ---
 class HealthResponse(BaseModel):
@@ -25,6 +63,7 @@ class PredictionResponse(BaseModel):
     class_index: int
     confidence: float
     message: str
+    heatmap_image: str
 
 # --- 3. FastAPI Application Definition ---
 app = FastAPI(
@@ -49,6 +88,17 @@ async def startup_event():
         model_full_path = os.path.abspath(MODEL_PATH)
         model = tf.keras.models.load_model(model_full_path, compile=False)
         print(f"✅ Successfully loaded model from: {model_full_path}")
+
+        # --- TEMPORARY DEBUGGING BLOCK ---
+        print("\n--- Model Layers for Grad-CAM ---")
+        # Print all layer names in the model
+        for layer in model.layers:
+            # We are typically interested in the last Conv2D or MaxPool layer before dense layers.
+            if 'conv' in layer.name or 'pool' in layer.name:
+                print(f"Layer Name: {layer.name}, Type: {type(layer).__name__}")
+        print("---------------------------------")
+        # --- END TEMPORARY DEBUGGING BLOCK ---
+
     except Exception as e:
         # If the model fails to load, the API should not start.
         raise RuntimeError(f"🚨 FAILED TO LOAD MODEL from {MODEL_PATH}: {e}")
@@ -77,8 +127,13 @@ async def predict_crater_age(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(contents))
 
         # 2. Convert PIL → TensorFlow tensor (uint8)
+        image = image.convert("RGB")
+        image = image.resize(TARGET_SIZE)
         image_np = np.array(image, dtype=np.uint8)
         image_tf = tf.convert_to_tensor(image_np)
+
+        # [DEBUG PRINT]
+        # print(f"DEBUG: Image Tensor Shape (H,W,C): {image_tf.shape}")
 
         # 3. Apply Preprocessing function (Z-score normalization)
         preprocessed_image = preprocess_image(image_tf,
@@ -86,15 +141,34 @@ async def predict_crater_age(file: UploadFile = File(...)):
                                               normalization="zscore"
                                               )
 
-        # 4. Make Prediction
-        predictions = model.predict(preprocessed_image)
+        # 3.5. Ensure the tensor is float32, which is required by model.predict and Grad-CAM
+        if preprocessed_image.dtype != tf.float32:
+            preprocessed_image = tf.cast(preprocessed_image, tf.float32)
 
-        # 5. Process Softmax Output
-        predicted_proba = np.max(predictions[0])
+        # [DEBUG PRINT]
+        # print(f"DEBUG: Preprocessed Image Shape (1,H,W,C): {preprocessed_image.shape}")
+
+        # 4. Make Prediction and index for Grad-CAM
+        predictions = model.predict(preprocessed_image)
         predicted_index = np.argmax(predictions[0])
+
+        # 5. Gradient-weighted Class Activation Mapping heatmap generation
+        # Adding explainability via Grad-CAM
+        heatmap_array = make_gradcam_heatmap(
+            preprocessed_image,
+            model,
+            LAST_CONV_LAYER,
+            pred_index=predicted_index
+        ) # The output expected to be a NumPy array representing the heatmap image
+
+        # 6. Encode Heatmap
+        encoded_heatmap = encode_image_to_base64(heatmap_array)
+
+        # 7. Process Softmax Output
+        predicted_proba = np.max(predictions[0])
         predicted_class = CLASS_NAMES[predicted_index]
 
-        # 6. Abstention Check (recommended based on LROCNet)
+        # 8. Abstention Check (recommended based on LROCNet)
         # Insert confidence threshold (e.g., 0.8) here:
         # if predicted_proba < 0.8:
         #     return {"class_name": "Abstain", "confidence": predicted_proba, ...}
@@ -104,6 +178,7 @@ async def predict_crater_age(file: UploadFile = File(...)):
             "class_index": int(predicted_index),
             "confidence": float(predicted_proba),
             "message": f"Successfully classified image: {file.filename}",
+            "heatmap_image": encoded_heatmap
         }
 
     except Exception as e:
