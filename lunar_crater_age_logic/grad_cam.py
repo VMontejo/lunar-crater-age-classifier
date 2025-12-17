@@ -1,8 +1,10 @@
 import tensorflow as tf
 import numpy as np
+import cv2
 
 
-def make_gradcam_heatmap(img_array, model, last_conv_layer_name, pred_index=None):
+
+def make_gradcam_heatmap(img_array, model, last_conv_layer_name, original_image, pred_index=None):
     """
     Generates a Grad-CAM heatmap for a given image and model.
 
@@ -81,5 +83,16 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_name, pred_index=None
         # Handle edge case where heatmap is empty/zero
         heatmap = tf.zeros(heatmap.shape)
 
-    heatmap_2d = tf.squeeze(heatmap)
-    return heatmap_2d.numpy()
+    heatmap_2d = tf.squeeze(heatmap).numpy()
+
+    #Resize, colorize, Overlay
+    h, w, _ = original_image.shape
+    heatmap_resized = cv2.resize(heatmap_2d, (w, h))
+
+    heatmap_colored = cv2.applyColorMap(np.uint8(255 * heatmap_resized), cv2.COLORMAP_JET)
+    heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
+
+    overlay = cv2.addWeighted(original_image.astype(np.uint8), 0.6, heatmap_colored, 0.4, 0)
+
+
+    return overlay, heatmap_resized
