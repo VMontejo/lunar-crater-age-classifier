@@ -24,7 +24,7 @@ def encode_image_to_base64(image_data: np.ndarray) -> str:
     Ensures the array is properly formatted (uint8, 3-channel) for PIL.
     """
     heatmap_array = image_data.copy()
-    # 1. Ensure array is normalized floats (0.0 to 1.0)
+    ## 1. Ensure array is normalized floats (0.0 to 1.0)
     # Handle both common cases: uint8 (0-255) or float32 (0.0-1.0)
     if heatmap_array.dtype != np.float32 and heatmap_array.dtype != np.float64:
         heatmap_array = heatmap_array.astype(np.float32) / 255.0
@@ -52,6 +52,20 @@ def encode_image_to_base64(image_data: np.ndarray) -> str:
 
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
+def encode_image_to_base64_rgb(image: np.ndarray) -> str:
+    """
+    Encode an RGB uint8 image directly to base64 PNG (NO normalization).
+    """
+    if image.dtype != np.uint8:
+        image = np.clip(image, 0, 255).astype(np.uint8)
+
+    img = Image.fromarray(image, mode="RGB")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+
 # --- 2. Define Request/Response Schemas (Pydantic) ---
 class HealthResponse(BaseModel):
     status: str
@@ -64,6 +78,7 @@ class PredictionResponse(BaseModel):
     confidence: float
     message: str
     heatmap_image: str
+    overlay_image: str
 
 # --- 3. FastAPI Application Definition ---
 app = FastAPI(
@@ -146,15 +161,17 @@ async def predict_crater_age(file: UploadFile = File(...)):
 
         # 5. Gradient-weighted Class Activation Mapping heatmap generation
         # Adding explainability via Grad-CAM
-        heatmap_array = make_gradcam_heatmap(
+        overlay, heatmap_array = make_gradcam_heatmap(
             preprocessed_image,
             model,
             LAST_CONV_LAYER,
+            original_image = image_np,
             pred_index=predicted_index
         ) # The output expected to be a NumPy array representing the heatmap image
 
         # 6. Encode Heatmap
         encoded_heatmap = encode_image_to_base64(heatmap_array)
+        encoded_overlay = encode_image_to_base64_rgb(overlay)
 
         # 7. Process Softmax Output
         predicted_proba = np.max(predictions[0])
@@ -170,6 +187,7 @@ async def predict_crater_age(file: UploadFile = File(...)):
             "class_index": int(predicted_index),
             "confidence": float(predicted_proba),
             "message": f"Successfully classified image: {file.filename}",
+            "overlay_image": encoded_overlay,
             "heatmap_image": encoded_heatmap
         }
 
